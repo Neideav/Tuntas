@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.github
+apps/api/vendor
+apps/api/storage/*.key
+apps/api/storage/logs/*.log
+apps/api/storage/framework/sessions/*
+apps/api/storage/framework/views/*
+apps/api/storage/framework/cache/data/*
+apps/api/database/database.sqlite*
+.env
+.env.local
+dist
+tmp
+
