@@ -16,7 +16,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       }`}
     >
       <Navbar />
-      <main className="p-8 max-w-7xl mx-auto">
+      <main className="px-8 py-6 w-full">
         <PageTransition>{children}</PageTransition>
       </main>
     </div>
@@ -42,7 +42,7 @@ export default function DashboardLayout({
 
   if (isAuthenticated === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
       </div>
     );
@@ -51,7 +51,7 @@ export default function DashboardLayout({
   return (
     <MotionProvider>
       <SidebarProvider>
-        <div className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="min-h-screen bg-[#f8f9fa] text-slate-900">
           <Sidebar />
           <DashboardContent>{children}</DashboardContent>
         </div>

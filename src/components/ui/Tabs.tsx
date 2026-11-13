@@ -34,9 +34,9 @@ export function Tabs({
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className={`group relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer select-none ${
+            className={`group relative flex items-center gap-2 px-4 py-2.5 text-xs font-semibold transition-colors cursor-pointer select-none ${
               isActive
-                ? 'text-sky-600 font-semibold'
+                ? 'text-sky-600'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >

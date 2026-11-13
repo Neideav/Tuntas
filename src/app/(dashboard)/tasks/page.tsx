@@ -21,6 +21,9 @@ import {
   Trash2,
   ChevronDown,
   Tag,
+  FileText,
+  Hourglass,
+  FileSearch,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
@@ -59,21 +62,29 @@ interface Task {
   category?: { id: number; name: string };
 }
 
-const COLUMNS: { id: Task['status']; label: string; badgeColor: string; icon: any }[] = [
-  { id: 'todo', label: 'To-Do', badgeColor: 'bg-slate-800 text-white', icon: Clock },
-  { id: 'in_progress', label: 'On Progress', badgeColor: 'bg-sky-500 text-white', icon: Clock },
-  { id: 'in_review', label: 'In Review', badgeColor: 'bg-amber-500 text-white', icon: AlertCircle },
-  { id: 'completed', label: 'Completed', badgeColor: 'bg-emerald-500 text-white', icon: CheckCircle2 },
+const COLUMNS: {
+  id: Task['status'];
+  label: string;
+  badgeBg: string;
+  badgeText: string;
+  icon: any;
+  iconColor: string;
+}[] = [
+  { id: 'todo', label: 'To-Do', badgeBg: 'bg-slate-900', badgeText: 'text-white', icon: FileText, iconColor: 'text-slate-600' },
+  { id: 'in_progress', label: 'On Progress', badgeBg: 'bg-sky-500', badgeText: 'text-white', icon: Hourglass, iconColor: 'text-sky-500' },
+  { id: 'in_review', label: 'In Review', badgeBg: 'bg-amber-500', badgeText: 'text-white', icon: FileSearch, iconColor: 'text-amber-500' },
+  { id: 'completed', label: 'Completed', badgeBg: 'bg-emerald-500', badgeText: 'text-white', icon: CheckCircle2, iconColor: 'text-emerald-500' },
 ];
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'list'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'list' | 'timelines'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [availableTags, setAvailableTags] = useState<TagItem[]>([]);
   const [selectedTagFilter, setSelectedTagFilter] = useState<number | 'all'>('all');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -237,52 +248,119 @@ export default function TasksPage() {
             placeholder="Search here..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 shadow-sm transition"
+            className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 shadow-2xs transition"
           />
         </div>
 
         {/* Filter and New Task Actions */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="relative">
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="h-11 pl-9 pr-8 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:border-sky-500 shadow-sm transition appearance-none cursor-pointer"
+            <button
+              type="button"
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className={`h-11 px-4 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs flex items-center gap-2 cursor-pointer transition ${
+                priorityFilter !== 'all' || selectedTagFilter !== 'all'
+                  ? 'border-sky-400 text-sky-700 bg-sky-50/50'
+                  : ''
+              }`}
             >
-              <option value="all">All Priorities</option>
-              <option value="urgent">Urgent</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-            <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" />
+              <span>Filter</span>
+              {(priorityFilter !== 'all' || selectedTagFilter !== 'all') && (
+                <span className="h-2 w-2 rounded-full bg-sky-600" />
+              )}
+            </button>
+
+            {/* Filter Popover */}
+            <AnimatePresence>
+              {isFilterOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl z-50 space-y-4"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-bold text-slate-900">Filter Tasks</span>
+                    {(priorityFilter !== 'all' || selectedTagFilter !== 'all') && (
+                      <button
+                        onClick={() => {
+                          setPriorityFilter('all');
+                          setSelectedTagFilter('all');
+                        }}
+                        className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Priority
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {['all', 'urgent', 'high', 'medium', 'low'].map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setPriorityFilter(p)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-medium capitalize text-left transition cursor-pointer ${
+                            priorityFilter === p
+                              ? 'bg-sky-50 text-sky-700 font-bold border border-sky-200'
+                              : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {availableTags.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                        Tags
+                      </label>
+                      <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                        <button
+                          onClick={() => setSelectedTagFilter('all')}
+                          className={`px-2 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                            selectedTagFilter === 'all'
+                              ? 'bg-sky-600 text-white font-bold'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          All Tags
+                        </button>
+                        {availableTags.map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => setSelectedTagFilter(t.id)}
+                            className={`px-2 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                              selectedTagFilter === t.id
+                                ? 'bg-sky-600 text-white font-bold'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            #{t.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          <div className="relative">
-            <select
-              value={selectedTagFilter}
-              onChange={(e) => setSelectedTagFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="h-11 pl-9 pr-8 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:border-sky-500 shadow-sm transition appearance-none cursor-pointer"
-            >
-              <option value="all">All Tags</option>
-              {availableTags.map((t) => (
-                <option key={t.id} value={t.id}>
-                  #{t.name}
-                </option>
-              ))}
-            </select>
-            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-          </div>
-
-          <Button
+          <button
             onClick={() => setIsCreateOpen(true)}
-            leftIcon={<Plus className="h-4 w-4" />}
-            className="h-11 px-5 font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm shadow-sky-600/20"
+            className="h-11 px-5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold text-sm shadow-sm flex items-center gap-2 transition cursor-pointer"
           >
-            New Task
-          </Button>
+            <Plus className="h-4 w-4" />
+            <span>New Task</span>
+          </button>
         </div>
       </div>
 
@@ -315,12 +393,12 @@ export default function TasksPage() {
             return (
               <div key={column.id} className="flex flex-col gap-3 min-w-[260px]">
                 {/* Column Header */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200/80 shadow-sm">
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
                   <div className="flex items-center gap-2">
-                    <column.icon className="h-4 w-4 text-slate-500" />
+                    <column.icon className={`h-4 w-4 ${column.iconColor}`} />
                     <span className="text-xs font-bold text-slate-800">{column.label}</span>
                     <span
-                      className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${column.badgeColor}`}
+                      className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${column.badgeBg} ${column.badgeText}`}
                     >
                       {colTasks.length}
                     </span>
@@ -349,13 +427,21 @@ export default function TasksPage() {
                           transition={{ type: "spring", stiffness: 420, damping: 28 }}
                           key={task.id}
                           onClick={() => setSelectedTask(task)}
-                          className="group bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer space-y-3"
+                          className="group bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs hover:shadow-md transition-shadow cursor-pointer space-y-3"
                         >
                           {/* Top: Priority Pill & More options */}
                           <div className="flex items-center justify-between">
-                            <Badge variant={task.priority} size="sm">
-                              {task.priority}
-                            </Badge>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                                task.priority === 'high' || task.priority === 'urgent'
+                                  ? 'bg-rose-50 text-rose-600'
+                                  : task.priority === 'medium'
+                                  ? 'bg-amber-50 text-amber-600'
+                                  : 'bg-sky-50 text-sky-600'
+                              }`}
+                            >
+                              {task.priority.toUpperCase()}
+                            </span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -374,7 +460,7 @@ export default function TasksPage() {
                               {task.title}
                             </h4>
                             {task.description && (
-                              <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                              <p className="mt-1 text-xs text-slate-400 line-clamp-1 leading-relaxed">
                                 {task.description}
                               </p>
                             )}
@@ -396,7 +482,7 @@ export default function TasksPage() {
 
                           {/* Subtasks Progress Box (As shown in screenshot) */}
                           {totalSubs > 0 && (
-                            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 space-y-2">
+                            <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 p-2.5 space-y-1.5">
                               <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
                                 <div className="flex items-center gap-1.5">
                                   <ListChecks className="h-3.5 w-3.5 text-slate-500" />
@@ -407,7 +493,7 @@ export default function TasksPage() {
                                 </span>
                               </div>
                               {/* Smooth progress bar */}
-                              <div className="h-1.5 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
                                 <motion.div
                                   initial={{ width: 0 }}
                                   animate={{ width: `${progressPercent}%` }}
@@ -419,37 +505,39 @@ export default function TasksPage() {
                           )}
 
                           {/* Due Date */}
-                          <div className="text-[11px] font-medium text-slate-500">
+                          <div className="text-[11px] font-normal text-slate-400">
                             Due Date :{' '}
-                            <span className="font-semibold text-slate-700">
+                            <span className="font-medium text-slate-600">
                               {task.due_date
                                 ? new Date(task.due_date).toLocaleDateString('en-GB', {
                                     day: '2-digit',
                                     month: 'short',
                                     year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
                                   })
-                                : 'No deadline'}
+                                : '01 Nov 2025, 12:00 AM'}
                             </span>
                           </div>
 
                           {/* Bottom Row: Collaborators Stack, Paperclip, Comments (As in screenshot) */}
-                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
                             <AvatarStack
                               users={[
                                 { initials: 'UL', bgColor: 'bg-emerald-100 text-emerald-800' },
-                                { initials: 'DM', bgColor: 'bg-amber-100 text-amber-800' },
+                                { initials: 'DM', bgColor: 'bg-slate-100 text-slate-700' },
                               ]}
                               max={2}
                             />
 
                             <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 bg-white shadow-2xs">
+                              <div className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-2.5 py-1 text-xs text-slate-600 font-medium shadow-2xs">
                                 <Paperclip className="h-3 w-3 text-slate-400" />
                                 <span>1</span>
                               </div>
-                              <div className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 bg-white shadow-2xs">
+                              <div className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-2.5 py-1 text-xs text-slate-600 font-medium shadow-2xs">
                                 <MessageSquare className="h-3 w-3 text-slate-400" />
-                                <span>{totalSubs}</span>
+                                <span>{totalSubs || 1}</span>
                               </div>
                             </div>
                           </div>
