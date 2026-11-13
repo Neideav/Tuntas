@@ -18,6 +18,7 @@ Official technical architecture, engineering specifications, API reference, and 
 | **08** | **[Developer Guide & Handbook](./08-developer-guide.md)** | Prerequisites, local installation, dev commands, testing suites, coding standards. |
 | **09** | **[Deployment & DevOps Manual](./09-deployment-and-devops.md)** | Docker Compose, environment configuration, Nginx, Systemd, backups & recovery. |
 | **10** | **[End-User Manual & Guide](./10-user-guide.md)** | User walkthrough for all screens, workflows, and interactive capabilities. |
+| **11** | **[Motion Animation System](./11-motion-animation-system.md)** | Motion for React specification, tokens, physics curves, reusable widgets, a11y. |
 | **—** | **[UI/UX Design System](./07-ui-ux-design-system.md)** | Design tokens, typography, component specifications, responsive layouts, a11y. |
 
 ---

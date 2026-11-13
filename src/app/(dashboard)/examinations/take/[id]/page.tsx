@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, use, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Clock,
   ShieldAlert,
@@ -324,7 +325,7 @@ export default function ExamTakingPage({
       {/* Main Examination Workspace */}
       <div className="flex-1 max-w-6xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* Left Column: Question Viewer */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-6">
+        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-6 overflow-hidden">
           {/* Question Header & Points */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div className="flex items-center gap-2">
@@ -340,66 +341,79 @@ export default function ExamTakingPage({
             </span>
           </div>
 
-          {/* Question Prompt */}
-          <div className="space-y-4">
-            <p className="text-base font-semibold text-slate-900 leading-relaxed">
-              {currentQuestion?.prompt}
-            </p>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentIndex}
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.14 }}
+              className="space-y-6"
+            >
+              {/* Question Prompt */}
+              <div className="space-y-4">
+                <p className="text-base font-semibold text-slate-900 leading-relaxed">
+                  {currentQuestion?.prompt}
+                </p>
 
-            {/* Code Snippet block if present */}
-            {currentQuestion?.code_snippet && (
-              <div className="rounded-xl bg-slate-900 p-4 text-xs font-mono text-emerald-400 overflow-x-auto border border-slate-800">
-                <pre>{currentQuestion.code_snippet}</pre>
+                {/* Code Snippet block if present */}
+                {currentQuestion?.code_snippet && (
+                  <div className="rounded-xl bg-slate-900 p-4 text-xs font-mono text-emerald-400 overflow-x-auto border border-slate-800">
+                    <pre>{currentQuestion.code_snippet}</pre>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Question Options / Input */}
-          <div className="space-y-3 pt-2">
-            {currentQuestion?.options && currentQuestion.options.length > 0 ? (
-              <div className="space-y-2.5">
-                {currentQuestion.options.map((opt: any) => {
-                  const isSelected =
-                    answers[currentQuestion.id]?.selected_option_ids?.includes(opt.id) || false;
-                  const isMultiple = currentQuestion.type === 'multiple_choice_multiple';
+              {/* Question Options / Input */}
+              <div className="space-y-3 pt-2">
+                {currentQuestion?.options && currentQuestion.options.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {currentQuestion.options.map((opt: any) => {
+                      const isSelected =
+                        answers[currentQuestion.id]?.selected_option_ids?.includes(opt.id) || false;
+                      const isMultiple = currentQuestion.type === 'multiple_choice_multiple';
 
-                  return (
-                    <label
-                      key={opt.id}
-                      onClick={() => handleSelectOption(currentQuestion.id, opt.id, isMultiple)}
-                      className={`flex items-center gap-3 p-4 rounded-xl border text-sm font-medium transition cursor-pointer ${
-                        isSelected
-                          ? 'border-sky-500 bg-sky-50/70 text-sky-900 shadow-xs'
-                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      <input
-                        type={isMultiple ? 'checkbox' : 'radio'}
-                        name={`question_${currentQuestion.id}`}
-                        checked={isSelected}
-                        onChange={() => {}}
-                        className="h-4 w-4 text-sky-600 focus:ring-sky-500"
-                      />
-                      <span>{opt.option_text}</span>
+                      return (
+                        <motion.label
+                          key={opt.id}
+                          whileTap={{ scale: 0.99 }}
+                          transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                          onClick={() => handleSelectOption(currentQuestion.id, opt.id, isMultiple)}
+                          className={`flex items-center gap-3 p-4 rounded-xl border text-sm font-medium transition cursor-pointer ${
+                            isSelected
+                              ? 'border-sky-500 bg-sky-50/70 text-sky-900 shadow-xs'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type={isMultiple ? 'checkbox' : 'radio'}
+                            name={`question_${currentQuestion.id}`}
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="h-4 w-4 text-sky-600 focus:ring-sky-500"
+                          />
+                          <span>{opt.option_text}</span>
+                        </motion.label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                      Your Answer
                     </label>
-                  );
-                })}
+                    <textarea
+                      rows={4}
+                      placeholder="Type your response here..."
+                      value={answers[currentQuestion?.id]?.text_response || ''}
+                      onChange={(e) => handleTextAnswerChange(currentQuestion.id, e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    />
+                  </div>
+                )}
               </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Your Answer
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="Type your response here..."
-                  value={answers[currentQuestion?.id]?.text_response || ''}
-                  onChange={(e) => handleTextAnswerChange(currentQuestion.id, e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                />
-              </div>
-            )}
-          </div>
+            </motion.div>
+          </AnimatePresence>
 
           {/* Navigation Controls */}
           <div className="flex items-center justify-between pt-6 border-t border-slate-100">

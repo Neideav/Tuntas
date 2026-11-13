@@ -4,6 +4,24 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
+import { MotionProvider, PageTransition } from '@/components/animations';
+import { SidebarProvider, useSidebar } from '@/components/layout/sidebar-context';
+
+function DashboardContent({ children }: { children: React.ReactNode }) {
+  const { isCollapsed } = useSidebar();
+  return (
+    <div
+      className={`min-h-screen transition-[padding] duration-200 ease-out ${
+        isCollapsed ? 'pl-20' : 'pl-64'
+      }`}
+    >
+      <Navbar />
+      <main className="p-8 max-w-7xl mx-auto">
+        <PageTransition>{children}</PageTransition>
+      </main>
+    </div>
+  );
+}
 
 export default function DashboardLayout({
   children,
@@ -31,12 +49,13 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <Sidebar />
-      <div className="pl-64">
-        <Navbar />
-        <main className="p-8 max-w-7xl mx-auto">{children}</main>
-      </div>
-    </div>
+    <MotionProvider>
+      <SidebarProvider>
+        <div className="min-h-screen bg-slate-50 text-slate-900">
+          <Sidebar />
+          <DashboardContent>{children}</DashboardContent>
+        </div>
+      </SidebarProvider>
+    </MotionProvider>
   );
 }

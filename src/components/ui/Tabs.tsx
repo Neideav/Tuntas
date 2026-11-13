@@ -1,4 +1,8 @@
+'use client';
+
 import React from 'react';
+import { motion } from 'motion/react';
+import { SPRING_TRANSITIONS } from '@/lib/animations';
 
 export interface TabItem {
   id: string;
@@ -12,9 +16,16 @@ export interface TabsProps {
   activeTab: string;
   onChange: (id: string) => void;
   className?: string;
+  layoutId?: string;
 }
 
-export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
+export function Tabs({
+  tabs,
+  activeTab,
+  onChange,
+  className = '',
+  layoutId = 'active-tab-indicator',
+}: TabsProps) {
   return (
     <div className={`flex items-center gap-1 border-b border-slate-200 ${className}`}>
       {tabs.map((tab) => {
@@ -23,7 +34,7 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className={`group relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all ${
+            className={`group relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer select-none ${
               isActive
                 ? 'text-sky-600 font-semibold'
                 : 'text-slate-500 hover:text-slate-800'
@@ -41,7 +52,7 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
             <span>{tab.label}</span>
             {tab.badge !== undefined && (
               <span
-                className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
                   isActive
                     ? 'bg-sky-100 text-sky-700'
                     : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
@@ -50,9 +61,13 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
                 {tab.badge}
               </span>
             )}
-            {/* Active underline pill */}
+            {/* Smooth animated active pill slider */}
             {isActive && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-600 rounded-full" />
+              <motion.span
+                layoutId={layoutId}
+                transition={SPRING_TRANSITIONS.tight}
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-600 rounded-full"
+              />
             )}
           </button>
         );
@@ -60,4 +75,3 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
     </div>
   );
 }
-

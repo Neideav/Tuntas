@@ -3,6 +3,7 @@
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { motion } from 'motion/react';
 import {
   Award,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { AnimatedNumber, FadeIn, StaggerContainer, StaggerItem } from '@/components/animations';
 
 export default function ExamReviewPage({
   params,
@@ -78,48 +80,50 @@ export default function ExamReviewPage({
       </div>
 
       {/* Scorecard Hero Banner */}
-      <div
-        className={`p-6 sm:p-8 rounded-3xl border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6 ${
-          isPassed
-            ? 'bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-white border-emerald-200'
-            : 'bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-white border-rose-200'
-        }`}
-      >
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                isPassed ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-              }`}
-            >
-              {isPassed ? 'Passed' : 'Not Passed'}
-            </span>
-            <span className="text-xs font-semibold text-slate-500">
-              Submitted: {new Date(attempt.submitted_at || attempt.updated_at).toLocaleString()}
-            </span>
+      <FadeIn direction="down">
+        <div
+          className={`p-6 sm:p-8 rounded-3xl border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6 ${
+            isPassed
+              ? 'bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-white border-emerald-200'
+              : 'bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-white border-rose-200'
+          }`}
+        >
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                  isPassed ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                }`}
+              >
+                {isPassed ? 'Passed' : 'Not Passed'}
+              </span>
+              <span className="text-xs font-semibold text-slate-500">
+                Submitted: {new Date(attempt.submitted_at || attempt.updated_at).toLocaleString()}
+              </span>
+            </div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+              {blueprint?.title || 'Examination Results'}
+            </h2>
+            <p className="text-xs text-slate-600">
+              Subject: <span className="font-semibold">{blueprint?.subject}</span> • Passing Score:{' '}
+              <span className="font-semibold">{blueprint?.passing_score}%</span>
+            </p>
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-            {blueprint?.title || 'Examination Results'}
-          </h2>
-          <p className="text-xs text-slate-600">
-            Subject: <span className="font-semibold">{blueprint?.subject}</span> • Passing Score:{' '}
-            <span className="font-semibold">{blueprint?.passing_score}%</span>
-          </p>
-        </div>
 
-        {/* Score Metric Circular/Box */}
-        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-slate-200/80 pt-4 sm:pt-0 sm:pl-8">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Final Score
-          </span>
-          <div className="text-3xl sm:text-4xl font-black text-slate-900">
-            {attempt.score_percentage}%
+          {/* Score Metric Circular/Box */}
+          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-slate-200/80 pt-4 sm:pt-0 sm:pl-8">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Final Score
+            </span>
+            <div className="text-3xl sm:text-4xl font-black text-slate-900">
+              <AnimatedNumber value={attempt.score_percentage || 0} />%
+            </div>
+            <p className="text-xs font-semibold text-slate-500">
+              <AnimatedNumber value={attempt.total_points_earned || 0} /> / {attempt.total_points_possible} Points
+            </p>
           </div>
-          <p className="text-xs font-semibold text-slate-500">
-            {attempt.total_points_earned} / {attempt.total_points_possible} Points
-          </p>
         </div>
-      </div>
+      </FadeIn>
 
       {/* Proctoring Integrity Summary Box */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-2">
@@ -166,7 +170,7 @@ export default function ExamReviewPage({
       </div>
 
       {/* Detailed Question Review List */}
-      <div className="space-y-4">
+      <StaggerContainer className="space-y-4">
         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
           Detailed Question Analysis ({questions.length} Items)
         </h3>
@@ -175,7 +179,7 @@ export default function ExamReviewPage({
           const isCorrect = q.is_correct;
 
           return (
-            <div
+            <StaggerItem
               key={q.id}
               className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4"
             >
@@ -276,10 +280,10 @@ export default function ExamReviewPage({
                   <p className="text-slate-600 leading-relaxed pl-5">{q.explanation}</p>
                 </div>
               )}
-            </div>
+            </StaggerItem>
           );
         })}
-      </div>
+      </StaggerContainer>
     </div>
   );
 }

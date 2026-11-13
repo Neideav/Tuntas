@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
   SlidersHorizontal,
@@ -285,108 +286,119 @@ export default function TasksPage() {
 
                 {/* Cards in Column */}
                 <div className="space-y-3.5 min-h-[150px]">
-                  {colTasks.map((task) => {
-                    const totalSubs = task.subtasks?.length || 0;
-                    const completedSubs =
-                      task.subtasks?.filter((s) => s.is_completed).length || 0;
-                    const progressPercent =
-                      totalSubs > 0 ? Math.round((completedSubs / totalSubs) * 100) : 0;
+                  <AnimatePresence mode="popLayout">
+                    {colTasks.map((task) => {
+                      const totalSubs = task.subtasks?.length || 0;
+                      const completedSubs =
+                        task.subtasks?.filter((s) => s.is_completed).length || 0;
+                      const progressPercent =
+                        totalSubs > 0 ? Math.round((completedSubs / totalSubs) * 100) : 0;
 
-                    return (
-                      <div
-                        key={task.id}
-                        onClick={() => setSelectedTask(task)}
-                        className="group bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm hover:shadow-md transition cursor-pointer space-y-3"
-                      >
-                        {/* Top: Priority Pill & More options */}
-                        <div className="flex items-center justify-between">
-                          <Badge variant={task.priority} size="sm">
-                            {task.priority}
-                          </Badge>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTask(task.id);
-                            }}
-                            title="Delete Task"
-                            className="text-slate-300 group-hover:text-slate-500 hover:text-red-500 transition p-1"
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                      return (
+                        <motion.div
+                          layout
+                          layoutId={`task-card-${task.id}`}
+                          initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.14 } }}
+                          whileHover={{ y: -2 }}
+                          transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                          key={task.id}
+                          onClick={() => setSelectedTask(task)}
+                          className="group bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer space-y-3"
+                        >
+                          {/* Top: Priority Pill & More options */}
+                          <div className="flex items-center justify-between">
+                            <Badge variant={task.priority} size="sm">
+                              {task.priority}
+                            </Badge>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTask(task.id);
+                              }}
+                              title="Delete Task"
+                              className="text-slate-300 group-hover:text-slate-500 hover:text-red-500 transition p-1 cursor-pointer"
+                            >
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
 
-                        {/* Title & Description */}
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900 group-hover:text-sky-600 transition leading-snug">
-                            {task.title}
-                          </h4>
-                          {task.description && (
-                            <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                              {task.description}
-                            </p>
-                          )}
-                        </div>
+                          {/* Title & Description */}
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 group-hover:text-sky-600 transition leading-snug">
+                              {task.title}
+                            </h4>
+                            {task.description && (
+                              <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                                {task.description}
+                              </p>
+                            )}
+                          </div>
 
-                        {/* Subtasks Progress Box (As shown in screenshot) */}
-                        {totalSubs > 0 && (
-                          <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 space-y-2">
-                            <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                              <div className="flex items-center gap-1.5">
-                                <ListChecks className="h-3.5 w-3.5 text-slate-500" />
-                                <span>Sub Task</span>
+                          {/* Subtasks Progress Box (As shown in screenshot) */}
+                          {totalSubs > 0 && (
+                            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 space-y-2">
+                              <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                                <div className="flex items-center gap-1.5">
+                                  <ListChecks className="h-3.5 w-3.5 text-slate-500" />
+                                  <span>Sub Task</span>
+                                </div>
+                                <span className="text-slate-600 font-bold">
+                                  {completedSubs}/{totalSubs}
+                                </span>
                               </div>
-                              <span className="text-slate-600 font-bold">
-                                {completedSubs}/{totalSubs}
-                              </span>
+                              {/* Smooth progress bar */}
+                              <div className="h-1.5 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                                <motion.div
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${progressPercent}%` }}
+                                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                                  className="h-full bg-sky-500 rounded-full"
+                                />
+                              </div>
                             </div>
-                            {/* Smooth progress bar */}
-                            <div className="h-1.5 w-full bg-slate-200/80 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-sky-500 rounded-full transition-all duration-300"
-                                style={{ width: `${progressPercent}%` }}
-                              />
+                          )}
+
+                          {/* Due Date */}
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Due Date :{' '}
+                            <span className="font-semibold text-slate-700">
+                              {task.due_date
+                                ? new Date(task.due_date).toLocaleDateString('en-GB', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })
+                                : 'No deadline'}
+                            </span>
+                          </div>
+
+                          {/* Bottom Row: Collaborators Stack, Paperclip, Comments (As in screenshot) */}
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <AvatarStack
+                              users={[
+                                { initials: 'UL', bgColor: 'bg-emerald-100 text-emerald-800' },
+                                { initials: 'DM', bgColor: 'bg-amber-100 text-amber-800' },
+                              ]}
+                              max={2}
+                            />
+
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 bg-white shadow-2xs">
+                                <Paperclip className="h-3 w-3 text-slate-400" />
+                                <span>1</span>
+                              </div>
+                              <div className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 bg-white shadow-2xs">
+                                <MessageSquare className="h-3 w-3 text-slate-400" />
+                                <span>{totalSubs}</span>
+                              </div>
                             </div>
                           </div>
-                        )}
-
-                        {/* Due Date */}
-                        <div className="text-[11px] font-medium text-slate-500">
-                          Due Date :{' '}
-                          <span className="font-semibold text-slate-700">
-                            {task.due_date
-                              ? new Date(task.due_date).toLocaleDateString('en-GB', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                })
-                              : 'No deadline'}
-                          </span>
-                        </div>
-
-                        {/* Bottom Row: Collaborators Stack, Paperclip, Comments (As in screenshot) */}
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                          <AvatarStack
-                            users={[
-                              { initials: 'UL', bgColor: 'bg-emerald-100 text-emerald-800' },
-                              { initials: 'DM', bgColor: 'bg-amber-100 text-amber-800' },
-                            ]}
-                            max={2}
-                          />
-
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 bg-white shadow-2xs">
-                              <Paperclip className="h-3 w-3 text-slate-400" />
-                              <span>1</span>
-                            </div>
-                            <div className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 bg-white shadow-2xs">
-                              <MessageSquare className="h-3 w-3 text-slate-400" />
-                              <span>{totalSubs}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               </div>
             );

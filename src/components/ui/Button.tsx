@@ -1,7 +1,12 @@
-import React from 'react';
-import { Loader2 } from 'lucide-react';
+"use client";
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+import React from 'react';
+import { motion, type HTMLMotionProps } from 'motion/react';
+import { Loader2 } from 'lucide-react';
+import { SPRING_TRANSITIONS } from '@/lib/animations';
+
+export interface ButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
+  children?: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg' | 'icon';
   loading?: boolean;
@@ -21,7 +26,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseClasses =
-    'inline-flex items-center justify-center font-medium transition-all focus:outline-none focus:ring-2 focus:ring-sky-500/20 disabled:opacity-50 disabled:pointer-events-none rounded-xl active:scale-[0.98]';
+    'inline-flex items-center justify-center font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 disabled:opacity-50 disabled:pointer-events-none rounded-xl select-none cursor-pointer';
 
   const sizeClasses: Record<string, string> = {
     sm: 'h-8 px-3 text-xs gap-1.5',
@@ -38,20 +43,24 @@ export function Button({
     danger: 'bg-red-600 text-white hover:bg-red-700 shadow-sm shadow-red-600/20',
   };
 
+  const isInteractive = !disabled && !loading;
+
   return (
-    <button
+    <motion.button
+      whileHover={isInteractive ? { scale: size === 'icon' ? 1.05 : 1.015 } : undefined}
+      whileTap={isInteractive ? { scale: 0.97 } : undefined}
+      transition={SPRING_TRANSITIONS.tight}
       className={`${baseClasses} ${sizeClasses[size] || sizeClasses.md} ${variantClasses[variant] || variantClasses.primary} ${className}`}
       disabled={disabled || loading}
       {...props}
     >
       {loading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
       ) : (
         leftIcon && <span className="shrink-0">{leftIcon}</span>
       )}
       {children}
       {!loading && rightIcon && <span className="shrink-0">{rightIcon}</span>}
-    </button>
+    </motion.button>
   );
 }
-
