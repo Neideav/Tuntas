@@ -38,6 +38,26 @@ class TagController extends Controller
         ], 201);
     }
 
+    public function update(Request $request, Tag $tag)
+    {
+        if ($tag->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:50',
+            'color' => 'nullable|string|max:20',
+        ]);
+
+        $tag->update($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tag berhasil diperbarui',
+            'data' => $tag,
+        ]);
+    }
+
     public function destroy(Request $request, Tag $tag)
     {
         if ($tag->user_id !== $request->user()->id) {
@@ -52,4 +72,3 @@ class TagController extends Controller
         ]);
     }
 }
-

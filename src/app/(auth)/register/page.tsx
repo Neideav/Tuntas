@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import api from '@/lib/api';
+import api, { extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AlertCircle } from 'lucide-react';
@@ -41,12 +41,8 @@ export default function RegisterPage() {
         localStorage.setItem('tuntas_user', JSON.stringify(response.data.data.user));
         router.push('/dashboard');
       }
-    } catch (err: any) {
-      const message =
-        err.response?.data?.errors
-          ? (Object.values(err.response.data.errors)[0] as any)?.[0]
-          : err.response?.data?.message || 'Registration failed.';
-      setError(message);
+    } catch (err: unknown) {
+      setError(extractApiErrorMessage(err, 'Registration failed. Please check your details.'));
     } finally {
       setLoading(false);
     }

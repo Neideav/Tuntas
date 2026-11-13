@@ -20,7 +20,7 @@ class HabitLog extends Model
     ];
 
     protected $casts = [
-        'log_date' => 'date',
+        'log_date' => 'date:Y-m-d',
         'value' => 'integer',
         'is_completed' => 'boolean',
         'used_freeze' => 'boolean',

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import api from '@/lib/api';
+import api, { extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AlertCircle } from 'lucide-react';
@@ -27,12 +27,8 @@ export default function LoginPage() {
         localStorage.setItem('tuntas_user', JSON.stringify(response.data.data.user));
         router.push('/dashboard');
       }
-    } catch (err: any) {
-      const message =
-        err.response?.data?.errors?.email?.[0] ||
-        err.response?.data?.message ||
-        'Login failed. Please check your credentials.';
-      setError(message);
+    } catch (err: unknown) {
+      setError(extractApiErrorMessage(err, 'Login failed. Please check your credentials.'));
     } finally {
       setLoading(false);
     }

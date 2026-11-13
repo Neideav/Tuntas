@@ -26,6 +26,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Tabs } from '@/components/ui/Tabs';
+import { PomodoroTimer } from '@/components/learning/PomodoroTimer';
 
 interface Lesson {
   id: number;
@@ -88,7 +89,7 @@ interface AnalyticsData {
 }
 
 export default function LearningPage() {
-  const [activeTab, setActiveTab] = useState<'courses' | 'sessions' | 'analytics'>('courses');
+  const [activeTab, setActiveTab] = useState<'courses' | 'timer' | 'sessions' | 'analytics'>('courses');
   const [courses, setCourses] = useState<Course[]>([]);
   const [sessions, setSessions] = useState<LearningSession[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -300,6 +301,7 @@ export default function LearningPage() {
 
   const tabs = [
     { id: 'courses', label: 'Subjects & Curriculum', icon: <BookOpen className="h-4 w-4" /> },
+    { id: 'timer', label: 'Pomodoro Focus Timer', icon: <Clock className="h-4 w-4" /> },
     { id: 'sessions', label: 'Study Sessions History', icon: <Timer className="h-4 w-4" /> },
     { id: 'analytics', label: 'Learning & Exam Analytics', icon: <BarChart3 className="h-4 w-4" /> },
   ];
@@ -545,6 +547,9 @@ export default function LearningPage() {
             })}
           </div>
         )
+      ) : activeTab === 'timer' ? (
+        /* POMODORO TIMER TAB */
+        <PomodoroTimer courses={courses} onSessionSaved={fetchData} />
       ) : activeTab === 'sessions' ? (
         /* STUDY SESSIONS HISTORY TAB */
         sessions.length === 0 ? (

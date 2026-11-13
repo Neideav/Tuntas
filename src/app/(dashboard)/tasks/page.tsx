@@ -20,6 +20,7 @@ import {
   X,
   Trash2,
   ChevronDown,
+  Tag,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
@@ -37,6 +38,12 @@ interface Subtask {
   order: number;
 }
 
+interface TagItem {
+  id: number;
+  name: string;
+  color?: string;
+}
+
 interface Task {
   id: number;
   title: string;
@@ -47,6 +54,7 @@ interface Task {
   project_id?: number | null;
   category_id?: number | null;
   subtasks?: Subtask[];
+  tags?: TagItem[];
   project?: { id: number; title: string };
   category?: { id: number; name: string };
 }
@@ -64,6 +72,8 @@ export default function TasksPage() {
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'list'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [availableTags, setAvailableTags] = useState<TagItem[]>([]);
+  const [selectedTagFilter, setSelectedTagFilter] = useState<number | 'all'>('all');
 
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -75,15 +85,22 @@ export default function TasksPage() {
   const [formPriority, setFormPriority] = useState<Task['priority']>('medium');
   const [formStatus, setFormStatus] = useState<Task['status']>('todo');
   const [formDueDate, setFormDueDate] = useState('');
+  const [formTags, setFormTags] = useState('');
   const [formSubtasks, setFormSubtasks] = useState<string[]>(['']);
   const [saving, setSaving] = useState(false);
 
   const fetchTasks = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/tasks');
+      const [res, tagsRes] = await Promise.all([
+        api.get('/tasks'),
+        api.get('/tags'),
+      ]);
       if (res.data?.success) {
         setTasks(res.data.data || []);
+      }
+      if (tagsRes.data?.success) {
+        setAvailableTags(tagsRes.data.data || []);
       }
     } catch (err) {
       console.error(err);
@@ -106,6 +123,11 @@ export default function TasksPage() {
         .filter((s) => s.trim().length > 0)
         .map((s) => ({ title: s.trim() }));
 
+      const parsedTags = formTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+
       const res = await api.post('/tasks', {
         title: formTitle,
         description: formDescription,
@@ -113,6 +135,7 @@ export default function TasksPage() {
         status: formStatus,
         due_date: formDueDate || null,
         subtasks: filteredSubtasks,
+        tags: parsedTags,
       });
 
       if (res.data?.success) {
@@ -122,6 +145,7 @@ export default function TasksPage() {
         setFormPriority('medium');
         setFormStatus('todo');
         setFormDueDate('');
+        setFormTags('');
         setFormSubtasks(['']);
         fetchTasks();
       }
@@ -186,10 +210,13 @@ export default function TasksPage() {
         task.description?.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
+      const matchesTag =
+        selectedTagFilter === 'all' ||
+        task.tags?.some((t) => t.id === selectedTagFilter);
 
-      return matchesSearch && matchesPriority;
+      return matchesSearch && matchesPriority && matchesTag;
     });
-  }, [tasks, searchQuery, priorityFilter]);
+  }, [tasks, searchQuery, priorityFilter, selectedTagFilter]);
 
   const viewTabs = [
     { id: 'kanban', label: 'Kanban', icon: <KanbanIcon className="h-4 w-4" /> },
@@ -229,6 +256,23 @@ export default function TasksPage() {
               <option value="low">Low</option>
             </select>
             <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          </div>
+
+          <div className="relative">
+            <select
+              value={selectedTagFilter}
+              onChange={(e) => setSelectedTagFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="h-11 pl-9 pr-8 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:border-sky-500 shadow-sm transition appearance-none cursor-pointer"
+            >
+              <option value="all">All Tags</option>
+              {availableTags.map((t) => (
+                <option key={t.id} value={t.id}>
+                  #{t.name}
+                </option>
+              ))}
+            </select>
+            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
           </div>
 
@@ -335,6 +379,20 @@ export default function TasksPage() {
                               </p>
                             )}
                           </div>
+
+                          {/* Tags */}
+                          {task.tags && task.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {task.tags.map((t) => (
+                                <span
+                                  key={t.id}
+                                  className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-100"
+                                >
+                                  #{t.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
 
                           {/* Subtasks Progress Box (As shown in screenshot) */}
                           {totalSubs > 0 && (
@@ -552,6 +610,17 @@ export default function TasksPage() {
             value={formDueDate}
             onChange={(e) => setFormDueDate(e.target.value)}
           />
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Tags (comma-separated)
+            </label>
+            <Input
+              placeholder="e.g. Frontend, API, Sprint-3"
+              value={formTags}
+              onChange={(e) => setFormTags(e.target.value)}
+            />
+          </div>
 
           {/* Subtasks Builder */}
           <div>

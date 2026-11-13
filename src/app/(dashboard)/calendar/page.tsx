@@ -122,6 +122,14 @@ export default function CalendarPage() {
           <span className="h-3 w-3 rounded-full bg-amber-500" />
           <span className="text-slate-700">Examination Date</span>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-violet-500" />
+          <span className="text-slate-700">Study Session</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-emerald-500" />
+          <span className="text-slate-700">Habit Logged</span>
+        </div>
       </div>
 
       {/* Monthly Grid */}
@@ -181,18 +189,20 @@ export default function CalendarPage() {
                   {dayEvents.slice(0, 2).map((ev: any, i: number) => {
                     const isExam = ev.type === 'examination' || ev.type === 'exam';
                     const isProject = ev.type === 'project';
+                    const isSession = ev.type === 'learning_session' || ev.type === 'study_session';
+                    const isHabit = ev.type === 'habit';
+
+                    let pillClass = 'bg-sky-50 text-sky-800 border border-sky-200';
+                    if (isExam) pillClass = 'bg-amber-50 text-amber-800 border border-amber-200';
+                    else if (isProject) pillClass = 'bg-purple-50 text-purple-800 border border-purple-200';
+                    else if (isSession) pillClass = 'bg-violet-50 text-violet-800 border border-violet-200';
+                    else if (isHabit) pillClass = 'bg-emerald-50 text-emerald-800 border border-emerald-200';
 
                     return (
                       <div
                         key={i}
                         title={ev.title}
-                        className={`truncate text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
-                          isExam
-                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                            : isProject
-                            ? 'bg-purple-50 text-purple-800 border border-purple-200'
-                            : 'bg-sky-50 text-sky-800 border border-sky-200'
-                        }`}
+                        className={`truncate text-[10px] font-bold px-1.5 py-0.5 rounded-md ${pillClass}`}
                       >
                         {ev.title}
                       </div>

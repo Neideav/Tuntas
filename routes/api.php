@@ -72,7 +72,7 @@ Route::prefix('v1')->group(function () {
 
         // Categories & Tags
         Route::apiResource('categories', CategoryController::class);
-        Route::apiResource('tags', TagController::class)->only(['index', 'store', 'destroy']);
+        Route::apiResource('tags', TagController::class)->only(['index', 'store', 'update', 'destroy']);
 
         // Notifications
         Route::get('/notifications', [NotificationController::class, 'index']);
@@ -126,6 +126,7 @@ Route::prefix('v1')->group(function () {
         Route::get('question-banks', [ExamAssessmentController::class, 'banksIndex']);
         Route::post('question-banks', [ExamAssessmentController::class, 'banksStore']);
         Route::get('question-banks/{bank}', [ExamAssessmentController::class, 'banksShow']);
+        Route::put('question-banks/{bank}', [ExamAssessmentController::class, 'banksUpdate']);
         Route::delete('question-banks/{bank}', [ExamAssessmentController::class, 'banksDestroy']);
         Route::post('question-banks/{bank}/questions', [ExamAssessmentController::class, 'questionsStore']);
         Route::put('questions/{question}', [ExamAssessmentController::class, 'questionsUpdate']);
@@ -143,5 +144,10 @@ Route::prefix('v1')->group(function () {
         Route::post('exam-attempts/{attempt}/integrity', [ExamAssessmentController::class, 'logIntegrity']);
         Route::post('exam-attempts/{attempt}/submit', [ExamAssessmentController::class, 'submitAttempt']);
         Route::get('exam-attempts/{attempt}/review', [ExamAssessmentController::class, 'getReview']);
+
+        // Instructor Manual Grading Queue
+        Route::get('exam-grading', [ExamAssessmentController::class, 'gradingIndex']);
+        Route::get('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingShow']);
+        Route::post('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingStore']);
     });
 });

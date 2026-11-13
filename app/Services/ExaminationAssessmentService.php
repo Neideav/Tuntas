@@ -51,7 +51,7 @@ class ExaminationAssessmentService
         if ($blueprint->max_attempts > 0) {
             $pastAttempts = ExamAttempt::where('exam_blueprint_id', $blueprint->id)
                 ->where('user_id', $user->id)
-                ->whereIn('status', ['submitted', 'completed', 'expired'])
+                ->whereIn('status', ['submitted', 'grading', 'completed', 'expired'])
                 ->count();
 
             if ($pastAttempts >= $blueprint->max_attempts) {
@@ -82,7 +82,7 @@ class ExaminationAssessmentService
                     'id' => $opt->id,
                     'option_text' => $opt->option_text,
                     'order' => $opt->order,
-                    // is_correct is intentionally NOT included in active snapshot
+                    // is_correct is intentionally NOT included in active student snapshot
                 ];
             });
 
@@ -98,7 +98,7 @@ class ExaminationAssessmentService
                 'difficulty' => $q->difficulty,
                 'points' => $points,
                 'options' => $options->all(),
-                // explanation is intentionally NOT included in active snapshot
+                // explanation is intentionally NOT included in active student snapshot
             ];
         }
 
@@ -133,7 +133,7 @@ class ExaminationAssessmentService
     }
 
     /**
-     * Auto-save answers heartbeat during an active attempt.
+     * Auto-save answers heartbeat during an active attempt with snapshot validation.
      */
     public function syncAnswers(ExamAttempt $attempt, array $answersList): array
     {
@@ -146,12 +146,33 @@ class ExaminationAssessmentService
             throw new \DomainException('Examination time has expired.');
         }
 
+        $snapshot = collect($attempt->questions_snapshot ?? []);
+        $snapshotMap = $snapshot->keyBy('id');
+
         $savedCount = 0;
-        DB::transaction(function () use ($attempt, $answersList, &$savedCount) {
+        DB::transaction(function () use ($attempt, $answersList, $snapshotMap, &$savedCount) {
             foreach ($answersList as $answerData) {
                 $qId = $answerData['question_id'] ?? null;
-                if (!$qId) {
+                if (!$qId || !$snapshotMap->has($qId)) {
+                    // Ignore question IDs that do not belong to active snapshot
                     continue;
+                }
+
+                $qInfo = $snapshotMap->get($qId);
+                $qType = $qInfo['type'] ?? 'multiple_choice_single';
+
+                $selectedOptionIds = null;
+                $textResponse = null;
+
+                if (in_array($qType, ['multiple_choice_single', 'multiple_choice_multiple', 'true_false'])) {
+                    if (isset($answerData['selected_option_ids']) && is_array($answerData['selected_option_ids'])) {
+                        $validOptIds = collect($qInfo['options'] ?? [])->pluck('id')->all();
+                        $selectedOptionIds = array_values(array_intersect($answerData['selected_option_ids'], $validOptIds));
+                    }
+                } else {
+                    if (isset($answerData['text_response'])) {
+                        $textResponse = is_string($answerData['text_response']) ? $answerData['text_response'] : null;
+                    }
                 }
 
                 ExamAnswer::updateOrCreate(
@@ -160,8 +181,8 @@ class ExaminationAssessmentService
                         'question_id' => $qId,
                     ],
                     [
-                        'selected_option_ids' => $answerData['selected_option_ids'] ?? null,
-                        'text_response' => $answerData['text_response'] ?? null,
+                        'selected_option_ids' => $selectedOptionIds,
+                        'text_response' => $textResponse,
                     ]
                 );
                 $savedCount++;
@@ -178,17 +199,18 @@ class ExaminationAssessmentService
     }
 
     /**
-     * Submit and auto-grade attempt.
+     * Submit and evaluate attempt. If essay or code_analysis questions exist, transitions to 'grading' for instructor evaluation.
      */
     public function submitAndGrade(ExamAttempt $attempt): ExamAttempt
     {
-        if ($attempt->status === 'completed') {
+        if (in_array($attempt->status, ['completed', 'grading'])) {
             return $attempt->load('answers');
         }
 
         return DB::transaction(function () use ($attempt) {
             $totalPointsEarned = 0.0;
             $snapshot = $attempt->questions_snapshot ?? [];
+            $hasPendingManualReview = false;
 
             foreach ($snapshot as $qData) {
                 $qId = $qData['id'];
@@ -234,7 +256,6 @@ class ExaminationAssessmentService
                             $awardedPoints = $pointsPossible;
                         }
                     } elseif ($qType === 'short_answer') {
-                        // Check if any correct option matches trimmed lowercase response
                         $expectedAnswers = $authoritativeQuestion->options
                             ->where('is_correct', true)
                             ->pluck('option_text')
@@ -247,9 +268,10 @@ class ExaminationAssessmentService
                             $awardedPoints = $pointsPossible;
                         }
                     } else {
-                        // Essay / code_analysis default to pending manual review
+                        // Essay / code_analysis require manual grading
                         $isCorrect = null;
                         $awardedPoints = 0.0;
+                        $hasPendingManualReview = true;
                     }
 
                     $answer->update([
@@ -277,12 +299,14 @@ class ExaminationAssessmentService
             $passingScore = $blueprint ? (float) $blueprint->passing_score : 70.0;
             $isPassed = ($scorePercentage >= $passingScore);
 
+            $attemptStatus = $hasPendingManualReview ? 'grading' : 'completed';
+
             $attempt->update([
-                'status' => 'completed',
+                'status' => $attemptStatus,
                 'submitted_at' => Carbon::now(),
                 'total_points_earned' => $totalPointsEarned,
                 'score_percentage' => $scorePercentage,
-                'is_passed' => $isPassed,
+                'is_passed' => $hasPendingManualReview ? false : $isPassed,
             ]);
 
             AuditLog::create([
@@ -291,9 +315,173 @@ class ExaminationAssessmentService
                 'auditable_type' => ExamAttempt::class,
                 'auditable_id' => $attempt->id,
                 'payload' => [
+                    'status' => $attemptStatus,
+                    'has_pending_manual_review' => $hasPendingManualReview,
                     'total_points_earned' => $totalPointsEarned,
                     'score_percentage' => $scorePercentage,
-                    'is_passed' => $isPassed,
+                    'is_passed' => $attempt->is_passed,
+                ],
+                'created_at' => now(),
+            ]);
+
+            return $attempt->fresh(['answers']);
+        });
+    }
+
+    /**
+     * Get attempts awaiting instructor manual grading.
+     */
+    public function getGradingQueue(User $instructor)
+    {
+        return ExamAttempt::whereHas('blueprint', function ($b) use ($instructor) {
+                if ($instructor->role !== 'admin') {
+                    $b->where('user_id', $instructor->id);
+                }
+            })
+            ->whereIn('status', ['grading', 'submitted'])
+            ->with(['blueprint', 'user:id,name,email'])
+            ->orderBy('submitted_at', 'asc')
+            ->get()
+            ->map(function ($attempt) {
+                $pendingCount = ExamAnswer::where('exam_attempt_id', $attempt->id)
+                    ->whereNull('is_correct')
+                    ->count();
+
+                return [
+                    'id' => $attempt->id,
+                    'student' => $attempt->user,
+                    'blueprint' => [
+                        'id' => $attempt->blueprint->id,
+                        'title' => $attempt->blueprint->title,
+                        'subject' => $attempt->blueprint->subject,
+                        'passing_score' => (float) $attempt->blueprint->passing_score,
+                    ],
+                    'status' => $attempt->status,
+                    'submitted_at' => $attempt->submitted_at,
+                    'total_points_possible' => (float) $attempt->total_points_possible,
+                    'total_points_earned' => (float) $attempt->total_points_earned,
+                    'score_percentage' => (float) $attempt->score_percentage,
+                    'pending_questions_count' => $pendingCount,
+                ];
+            });
+    }
+
+    /**
+     * Get specific attempt details formatted for the instructor grading interface.
+     */
+    public function getAttemptForGrading(ExamAttempt $attempt, User $instructor): array
+    {
+        if ($attempt->blueprint->user_id !== $instructor->id && $instructor->role !== 'admin') {
+            throw new \DomainException('Unauthorized to grade this examination attempt.');
+        }
+
+        $answers = ExamAnswer::where('exam_attempt_id', $attempt->id)->get()->keyBy('question_id');
+        $snapshot = $attempt->questions_snapshot ?? [];
+
+        $questionsList = [];
+        foreach ($snapshot as $qData) {
+            $ans = $answers->get($qData['id']);
+            $authoritative = Question::find($qData['id']);
+
+            $questionsList[] = [
+                'question_id' => $qData['id'],
+                'type' => $qData['type'],
+                'prompt' => $qData['prompt'],
+                'code_snippet' => $qData['code_snippet'] ?? null,
+                'explanation' => $authoritative?->explanation,
+                'points_possible' => (float) $qData['points'],
+                'awarded_points' => $ans ? (float) $ans->awarded_points : 0.0,
+                'is_correct' => $ans ? $ans->is_correct : null,
+                'text_response' => $ans ? $ans->text_response : null,
+                'evaluator_feedback' => $ans ? $ans->evaluator_feedback : null,
+                'requires_manual_grading' => in_array($qData['type'], ['essay', 'code_analysis']),
+            ];
+        }
+
+        return [
+            'attempt' => [
+                'id' => $attempt->id,
+                'status' => $attempt->status,
+                'started_at' => $attempt->started_at,
+                'submitted_at' => $attempt->submitted_at,
+                'total_points_possible' => (float) $attempt->total_points_possible,
+                'total_points_earned' => (float) $attempt->total_points_earned,
+                'score_percentage' => (float) $attempt->score_percentage,
+                'is_passed' => (bool) $attempt->is_passed,
+            ],
+            'student' => $attempt->user()->select('id', 'name', 'email')->first(),
+            'blueprint' => $attempt->blueprint()->select('id', 'title', 'subject', 'passing_score')->first(),
+            'questions' => $questionsList,
+        ];
+    }
+
+    /**
+     * Save manual grades, compute final score, and transition attempt to 'completed' when all questions are evaluated.
+     */
+    public function saveManualGrades(ExamAttempt $attempt, array $grades, User $instructor): ExamAttempt
+    {
+        if ($attempt->blueprint->user_id !== $instructor->id && $instructor->role !== 'admin') {
+            throw new \DomainException('Unauthorized to grade this examination attempt.');
+        }
+
+        return DB::transaction(function () use ($attempt, $grades, $instructor) {
+            $snapshot = collect($attempt->questions_snapshot ?? [])->keyBy('id');
+
+            foreach ($grades as $gradeItem) {
+                $qId = $gradeItem['question_id'] ?? null;
+                if (!$qId || !$snapshot->has($qId)) {
+                    continue;
+                }
+
+                $maxPoints = (float) ($snapshot[$qId]['points'] ?? 1.0);
+                $awarded = min($maxPoints, max(0.0, (float) ($gradeItem['awarded_points'] ?? 0.0)));
+                $feedback = $gradeItem['feedback'] ?? null;
+
+                ExamAnswer::updateOrCreate(
+                    [
+                        'exam_attempt_id' => $attempt->id,
+                        'question_id' => $qId,
+                    ],
+                    [
+                        'awarded_points' => $awarded,
+                        'evaluator_feedback' => $feedback,
+                        'is_correct' => ($awarded > 0),
+                    ]
+                );
+            }
+
+            // Recalculate total points across all answers
+            $allAnswers = ExamAnswer::where('exam_attempt_id', $attempt->id)->get();
+            $totalPointsEarned = (float) $allAnswers->sum('awarded_points');
+            $totalPointsPossible = (float) $attempt->total_points_possible;
+
+            $scorePercentage = $totalPointsPossible > 0
+                ? round(($totalPointsEarned / $totalPointsPossible) * 100, 2)
+                : 0.0;
+
+            $passingScore = (float) ($attempt->blueprint->passing_score ?? 70.0);
+            $isPassed = ($scorePercentage >= $passingScore);
+
+            // Check if any answers still have null is_correct
+            $hasPending = $allAnswers->contains(fn($ans) => $ans->is_correct === null);
+
+            $attempt->update([
+                'status' => $hasPending ? 'grading' : 'completed',
+                'total_points_earned' => $totalPointsEarned,
+                'score_percentage' => $scorePercentage,
+                'is_passed' => $isPassed,
+            ]);
+
+            AuditLog::create([
+                'user_id' => $instructor->id,
+                'action' => 'exam.manual_graded',
+                'auditable_type' => ExamAttempt::class,
+                'auditable_id' => $attempt->id,
+                'payload' => [
+                    'grades_count' => count($grades),
+                    'total_points_earned' => $totalPointsEarned,
+                    'score_percentage' => $scorePercentage,
+                    'status' => $attempt->fresh()->status,
                 ],
                 'created_at' => now(),
             ]);
@@ -363,6 +551,7 @@ class ExaminationAssessmentService
                 'is_correct' => $ans ? $ans->is_correct : false,
                 'selected_option_ids' => $ans ? $ans->selected_option_ids : [],
                 'text_response' => $ans ? $ans->text_response : null,
+                'evaluator_feedback' => $ans ? $ans->evaluator_feedback : null,
                 'options' => $optionsReview,
             ];
         }
@@ -381,4 +570,3 @@ class ExaminationAssessmentService
         ];
     }
 }
-

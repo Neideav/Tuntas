@@ -69,6 +69,27 @@ class ExamAssessmentController extends Controller
         ]);
     }
 
+    public function banksUpdate(Request $request, QuestionBank $bank)
+    {
+        if ($bank->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'title' => 'sometimes|string|max:255',
+            'subject' => 'sometimes|string|max:100',
+            'description' => 'nullable|string',
+        ]);
+
+        $bank->update($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Question bank updated successfully',
+            'data' => $bank,
+        ]);
+    }
+
     public function banksDestroy(Request $request, QuestionBank $bank)
     {
         if ($bank->user_id !== $request->user()->id) {
@@ -224,6 +245,22 @@ class ExamAssessmentController extends Controller
             'question_ids.*' => 'exists:questions,id',
         ]);
 
+        // Security: verify question ownership
+        if (!empty($validated['question_ids'])) {
+            $validCount = Question::whereIn('id', $validated['question_ids'])
+                ->whereHas('questionBank', function ($q) use ($request) {
+                    $q->where('user_id', $request->user()->id);
+                })
+                ->count();
+
+            if ($validCount !== count(array_unique($validated['question_ids']))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'One or more questions do not belong to your question banks.',
+                ], 403);
+            }
+        }
+
         $blueprint = DB::transaction(function () use ($request, $validated) {
             $bp = ExamBlueprint::create([
                 'user_id' => $request->user()->id,
@@ -263,11 +300,38 @@ class ExamAssessmentController extends Controller
 
     public function blueprintsShow(Request $request, ExamBlueprint $blueprint)
     {
+        $userId = $request->user()->id;
+        $isOwner = ($blueprint->user_id === $userId || $request->user()->role === 'admin');
+
+        if (!$isOwner && !$blueprint->is_published) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        if ($isOwner) {
+            $blueprint->load(['questions.options', 'course']);
+            return response()->json([
+                'success' => true,
+                'data' => $blueprint,
+            ]);
+        }
+
+        // Sanitized view for non-owners/students: strip correct answers and explanations
         $blueprint->load(['questions.options', 'course']);
+        $blueprintData = $blueprint->toArray();
+        if (!empty($blueprintData['questions'])) {
+            foreach ($blueprintData['questions'] as &$q) {
+                unset($q['explanation']);
+                if (!empty($q['options'])) {
+                    foreach ($q['options'] as &$opt) {
+                        unset($opt['is_correct']);
+                    }
+                }
+            }
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $blueprint,
+            'data' => $blueprintData,
         ]);
     }
 
@@ -293,6 +357,22 @@ class ExamAssessmentController extends Controller
             'question_ids' => 'nullable|array',
             'question_ids.*' => 'exists:questions,id',
         ]);
+
+        // Security: verify question ownership
+        if (isset($validated['question_ids']) && !empty($validated['question_ids'])) {
+            $validCount = Question::whereIn('id', $validated['question_ids'])
+                ->whereHas('questionBank', function ($q) use ($request) {
+                    $q->where('user_id', $request->user()->id);
+                })
+                ->count();
+
+            if ($validCount !== count(array_unique($validated['question_ids']))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'One or more questions do not belong to your question banks.',
+                ], 403);
+            }
+        }
 
         $updated = DB::transaction(function () use ($blueprint, $validated) {
             $blueprint->update(collect($validated)->except('question_ids')->all());
@@ -343,6 +423,19 @@ class ExamAssessmentController extends Controller
             'question_ids' => 'required|array',
             'question_ids.*' => 'exists:questions,id',
         ]);
+
+        $validCount = Question::whereIn('id', $validated['question_ids'])
+            ->whereHas('questionBank', function ($q) use ($request) {
+                $q->where('user_id', $request->user()->id);
+            })
+            ->count();
+
+        if ($validCount !== count(array_unique($validated['question_ids']))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'One or more questions do not belong to your question banks.',
+            ], 403);
+        }
 
         $maxOrder = $blueprint->questions()->max('exam_blueprint_questions.order') ?? 0;
         foreach ($validated['question_ids'] as $idx => $qId) {
@@ -485,5 +578,51 @@ class ExamAssessmentController extends Controller
             'data' => $attempts,
         ]);
     }
-}
 
+    // ==========================================
+    // 5. Instructor Manual Grading Engine
+    // ==========================================
+    public function gradingIndex(Request $request)
+    {
+        $queue = $this->assessmentService->getGradingQueue($request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => $queue,
+        ]);
+    }
+
+    public function gradingShow(Request $request, ExamAttempt $attempt)
+    {
+        try {
+            $data = $this->assessmentService->getAttemptForGrading($attempt, $request->user());
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+            ]);
+        } catch (\DomainException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        }
+    }
+
+    public function gradingStore(Request $request, ExamAttempt $attempt)
+    {
+        $validated = $request->validate([
+            'grades' => 'required|array',
+            'grades.*.question_id' => 'required|integer',
+            'grades.*.awarded_points' => 'required|numeric|min:0',
+            'grades.*.feedback' => 'nullable|string',
+        ]);
+
+        try {
+            $updated = $this->assessmentService->saveManualGrades($attempt, $validated['grades'], $request->user());
+            return response()->json([
+                'success' => true,
+                'message' => 'Manual evaluation saved successfully',
+                'data' => $updated,
+            ]);
+        } catch (\DomainException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        }
+    }
+}

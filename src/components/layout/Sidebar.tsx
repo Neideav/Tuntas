@@ -14,6 +14,7 @@ import {
   GraduationCap,
   Calendar,
   Bell,
+  BarChart3,
   Settings,
   HelpCircle,
   Folder,
@@ -37,6 +38,7 @@ const mainNavigation = [
   { name: 'Learning', href: '/learning', icon: BookOpen },
   { name: 'Examinations', href: '/examinations', icon: GraduationCap },
   { name: 'Calendar', href: '/calendar', icon: Calendar },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Notification', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
 ];
 
@@ -86,10 +88,16 @@ export function Sidebar() {
       .catch(() => {});
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('tuntas_token');
-    localStorage.removeItem('tuntas_user');
-    router.replace('/login');
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // ignore network errors during logout
+    } finally {
+      localStorage.removeItem('tuntas_token');
+      localStorage.removeItem('tuntas_user');
+      router.replace('/login');
+    }
   };
 
   return (

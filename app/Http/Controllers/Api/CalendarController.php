@@ -113,6 +113,25 @@ class CalendarController extends Controller
             }
         }
 
+        // 5. LMS Study Sessions
+        $studySessions = \App\Models\LearningSession::where('user_id', $userId)
+            ->whereBetween('session_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->with('course')
+            ->get();
+
+        foreach ($studySessions as $session) {
+            $events[] = [
+                'id' => "session-{$session->id}",
+                'title' => "Study: {$session->topic}" . ($session->course ? " ({$session->course->title})" : ""),
+                'type' => 'learning_session',
+                'start' => Carbon::parse($session->session_date)->toIso8601String(),
+                'status' => 'completed',
+                'duration_minutes' => $session->duration_minutes,
+                'color' => '#8b5cf6', // Violet
+                'reference_id' => $session->id,
+            ];
+        }
+
         return response()->json([
             'success' => true,
             'data' => $events,

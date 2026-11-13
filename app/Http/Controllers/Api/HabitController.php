@@ -24,7 +24,7 @@ class HabitController extends Controller
         $habits = Habit::where('user_id', $request->user()->id)
             ->where('is_archived', $request->boolean('archived', false))
             ->with(['logs' => function ($q) use ($today) {
-                $q->where('log_date', $today);
+                $q->whereDate('log_date', $today);
             }])
             ->orderBy('id', 'asc')
             ->get();

@@ -41,6 +41,13 @@ class TaskController extends Controller
             $query->where('project_id', $request->project_id);
         }
 
+        // Filter by Tag
+        if ($request->filled('tag_id')) {
+            $query->whereHas('tags', function ($tq) use ($request) {
+                $tq->where('tags.id', $request->tag_id);
+            });
+        }
+
         // Search in title or description
         if ($request->filled('q')) {
             $q = $request->q;

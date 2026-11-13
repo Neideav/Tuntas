@@ -7,6 +7,8 @@ interface AnimatedNumberProps {
   value: number;
   duration?: number;
   format?: (n: number) => string;
+  prefix?: string;
+  suffix?: string;
   className?: string;
 }
 
@@ -19,6 +21,8 @@ export function AnimatedNumber({
   value,
   duration = 0.4,
   format = (n) => Math.round(n).toLocaleString(),
+  prefix = "",
+  suffix = "",
   className = "",
 }: AnimatedNumberProps) {
   const [displayValue, setDisplayValue] = useState(value);
@@ -37,6 +41,6 @@ export function AnimatedNumber({
     return () => controls.stop();
   }, [value, duration]);
 
-  return <span className={className}>{format(displayValue)}</span>;
+  return <span className={className}>{prefix}{format(displayValue)}{suffix}</span>;
 }
 

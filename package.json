@@ -4,6 +4,8 @@
   "private": true,
   "description": "Tuntas — Integrated Full-Stack Productivity, LMS & Examination Platform",
   "scripts": {
+    "clean:next": "node -e \"const fs = require('fs'); ['src/.next', '.next'].forEach(p => { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); });\"",
+    "predev": "node -e \"const fs = require('fs'); ['src/.next', '.next'].forEach(p => { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); });\"",
     "dev": "concurrently -c \"cyan,magenta\" \"php artisan serve\" \"next dev src -p 3000\" --names=api,web --kill-others",
     "dev:api": "php artisan serve",
     "dev:web": "next dev src -p 3000",

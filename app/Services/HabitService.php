@@ -19,7 +19,7 @@ class HabitService
 
         return DB::transaction(function () use ($habit, $targetDate, $notes) {
             $log = HabitLog::where('habit_id', $habit->id)
-                ->where('log_date', $targetDate)
+                ->whereDate('log_date', $targetDate)
                 ->first();
 
             if ($log && $log->is_completed) {
@@ -29,24 +29,26 @@ class HabitService
                     'value' => 0,
                     'notes' => $notes ?? $log->notes,
                 ]);
+            } elseif ($log) {
+                $log->update([
+                    'is_completed' => true,
+                    'value' => $habit->target_count,
+                    'notes' => $notes ?? $log->notes,
+                ]);
             } else {
-                if ($log) {
-                    $log->update([
-                        'is_completed' => true,
-                        'value' => $habit->target_count,
-                        'notes' => $notes ?? $log->notes,
-                    ]);
-                } else {
-                    $log = HabitLog::create([
+                $log = HabitLog::updateOrCreate(
+                    [
                         'habit_id' => $habit->id,
-                        'user_id' => $habit->user_id,
                         'log_date' => $targetDate,
+                    ],
+                    [
+                        'user_id' => $habit->user_id,
                         'value' => $habit->target_count,
                         'is_completed' => true,
                         'used_freeze' => false,
                         'notes' => $notes,
-                    ]);
-                }
+                    ]
+                );
             }
 
             // Recalculate streak
@@ -115,7 +117,7 @@ class HabitService
             } else {
                 // Check if freeze token was used for this date
                 $freezeLog = HabitLog::where('habit_id', $habit->id)
-                    ->where('log_date', $dateStr)
+                    ->whereDate('log_date', $dateStr)
                     ->where('used_freeze', true)
                     ->exists();
 
