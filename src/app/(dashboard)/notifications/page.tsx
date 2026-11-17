@@ -209,9 +209,6 @@ export default function NotificationsPage() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-bold text-slate-900">{notif.title}</h4>
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                      {notif.type}
-                    </span>
                     {!notif.is_read && (
                       <span className="h-2 w-2 rounded-full bg-sky-500" />
                     )}

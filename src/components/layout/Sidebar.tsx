@@ -116,11 +116,13 @@ export function Sidebar() {
   const loadInitialData = useCallback(async () => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('tuntas_user');
-      if (stored) {
+      if (stored && stored !== 'undefined') {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.name) setUserName(parsed.name);
-          if (parsed.email) setUserEmail(parsed.email);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.name) setUserName(parsed.name);
+            if (parsed.email) setUserEmail(parsed.email);
+          }
         } catch {
           // ignore
         }
@@ -856,7 +858,7 @@ export function Sidebar() {
                   <button
                     type="submit"
                     disabled={savingCategory || !modalCatName.trim()}
-                    className="px-4 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+                    className="px-4 py-1.5 rounded-xl bg-[#19191D] hover:bg-black active:bg-[#111113] disabled:opacity-50 text-white text-xs font-semibold shadow-xs hover:shadow-sm transition cursor-pointer"
                   >
                     {savingCategory ? 'Saving...' : categoryModal.mode === 'create' ? 'Create' : 'Save'}
                   </button>

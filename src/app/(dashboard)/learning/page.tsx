@@ -311,11 +311,6 @@ export default function LearningPage() {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-bold uppercase tracking-wider">
-              Learning Management System
-            </span>
-          </div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">Learning Management</h2>
           <p className="mt-1 text-xs text-slate-500">
             Structure your course curriculum, track lesson completion, and log deep study sessions.
@@ -395,14 +390,7 @@ export default function LearningPage() {
                         {course.code || 'CS'}
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-base font-bold text-slate-900">{course.title}</h3>
-                          {course.code && (
-                            <Badge variant="outline" size="sm">
-                              {course.code}
-                            </Badge>
-                          )}
-                        </div>
+                        <h3 className="text-base font-bold text-slate-900">{course.title}</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
                           {modules.length} Modules • {completedLessons}/{totalLessons} Lessons Completed
                         </p>

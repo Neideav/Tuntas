@@ -22,22 +22,17 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
 
   const isInteractive = lifecycle === 'interactive' && !shouldReduceMotion;
 
-  // GROUND ANCHOR PRESERVATION:
-  // Using skewX and horizontal slide anchored at (307px 470px)
-  // keeps the bottom edge perfectly horizontal on y = 470!
-  const bodyPointerSkewX = useTransform(springX, (val) =>
-    isInteractive ? val * -7.5 : 0
-  );
-  const bodyPointerX = useTransform(springX, (val) =>
+  // STRICT GROUND ANCHOR PRESERVATION:
+  // Kuro's base rectangle sits 100% motionless and vertical at y=470!
+  // Pointer tracking & peeking is performed by the upper eyes and pupils.
+  const eyesPointerX = useTransform(springX, (val) =>
     isInteractive ? val * 6.5 : 0
   );
-  const bodyPointerScaleY = useTransform(springY, (val) =>
-    isInteractive ? 1 - val * 0.02 : 1
+  const eyesPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 4.0 : 0
   );
-
-  // Upper eyes tilt around (332px 235px) without rotating the base
   const eyesPointerRotate = useTransform(springX, (val) =>
-    isInteractive ? val * 2.0 : 0
+    isInteractive ? val * 1.5 : 0
   );
 
   // Pupils strictly bounded within sclera
@@ -71,6 +66,7 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
       scaleX: [0.95, 0.95, 0.98, 1.02, 1.0, 1.0],
       opacity: [0, 0, 1, 1, 1, 1],
       transition: {
+        type: 'tween' as const,
         duration: 4.4,
         times: [0, 0.41, 0.57, 0.73, 0.86, 1.0],
         ease: 'easeInOut' as const,
@@ -87,69 +83,68 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
       opacity: 1,
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
-    // Stage 3: Interactive states
+    // Stage 3: Interactive states - BASE REMAINS 100% FIXED ON GROUND (y=470)
     idle: {
-      scaleY: shouldReduceMotion ? 1 : [1, 1.02, 1],
+      scaleY: 1,
+      scaleX: 1,
       rotate: 0,
       x: 0,
       y: 0,
       skewX: 0,
       opacity: 1,
-      transition: {
-        scaleY: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' as const, delay: 0.3 },
-        default: smoothStateTransition,
-      },
+      transition: smoothStateTransition,
     },
     pointerTracking: {
       scaleY: 1,
       rotate: 0,
       x: 0,
       y: 0,
+      skewX: 0,
       opacity: 1,
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
     emailFocus: {
-      x: 10,
+      x: 0,
       y: 0,
       rotate: 0,
-      skewX: -6.5,
-      scaleY: 1.02,
+      skewX: 0,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordFocus: {
-      x: -12,
+      x: 0,
       y: 0,
       rotate: 0,
-      skewX: 4,
-      scaleY: 0.98,
+      skewX: 0,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordVisible: {
       y: 0,
-      x: 6,
+      x: 0,
       rotate: 0,
-      skewX: -3,
-      scaleY: 1.01,
+      skewX: 0,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     error: {
-      x: -4,
-      y: 0, // Remains grounded
-      scaleY: 0.92, // Sinks down via squash anchored at y=470!
+      x: 0,
+      y: 0,
+      scaleY: 1,
       rotate: 0,
-      skewX: 2,
+      skewX: 0,
       opacity: 1,
       transition: { duration: 0.45, ease: 'easeOut' as const },
     },
     success: {
-      y: -26,
+      scaleY: 1.05,
+      y: -16,
       x: 0,
       rotate: 0,
       skewX: 0,
-      scale: 1.05,
       opacity: 1,
       transition: celebrationSpring,
     },
@@ -166,6 +161,22 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
   const isError = lifecycle === 'interactive' && state === 'error';
   const isEmailFocus = lifecycle === 'interactive' && state === 'emailFocus';
 
+  // Base from y=300 to y=470 is strictly L 355 470 L 260 470 L 260 300 in ALL states!
+  // The bottom 170px NEVER moves, while the upper column leans and peeks out dynamically.
+  const normalKuroPath =
+    'M 260 195 C 291 195 323 195 355 195 C 355 240 355 270 355 300 L 355 470 L 260 470 L 260 300 C 260 270 260 240 260 195 Z';
+  const emailKuroPath =
+    'M 275 198 C 306 198 338 198 370 198 C 365 240 358 270 355 300 L 355 470 L 260 470 L 260 300 C 260 270 268 240 275 198 Z';
+  const passwordKuroPath =
+    'M 252 230 C 283 230 315 230 347 230 C 350 255 353 280 355 300 L 355 470 L 260 470 L 260 300 C 258 280 254 255 252 230 Z';
+
+  const currentKuroPath =
+    isEmailFocus
+      ? emailKuroPath
+      : isPasswordFocus
+      ? passwordKuroPath
+      : normalKuroPath;
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -175,33 +186,35 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
         transformOrigin: '307px 470px',
       }}
     >
-      {/* Sub-group for pointer-driven skew and scale anchored at fixed base y=470 */}
+      {/* Main Black Rectangular Body (Morphing upper pillar, baseline flat on y=470 strictly motionless) */}
+      <motion.path
+        d={currentKuroPath}
+        animate={{ d: currentKuroPath }}
+        transition={smoothStateTransition}
+        fill="#19191D"
+        className="transition-colors duration-300"
+      />
+
+      {/* ================= UPPER EYES GROUP ================= */}
+      {/* Moves and tilts smoothly with cursor parallax, leaving the base completely motionless */}
       <motion.g
         style={{
-          skewX: bodyPointerSkewX,
-          x: bodyPointerX,
-          scaleY: bodyPointerScaleY,
-          transformOrigin: '307px 470px',
+          x: eyesPointerX,
+          y: eyesPointerY,
+          rotate: eyesPointerRotate,
+          transformOrigin: '332px 235px',
         }}
+        animate={
+          isEmailFocus
+            ? { x: 15, y: 3, rotate: 3 }
+            : isPasswordFocus
+            ? { x: -8, y: 35, rotate: -3 }
+            : isError
+            ? { x: -3, y: 3, rotate: -3 }
+            : { x: 0, y: 0, rotate: 0 }
+        }
+        transition={smoothStateTransition}
       >
-        {/* Main Black Rectangular Body (Baseline flat on y=470) */}
-        <rect
-          x="260"
-          y="195"
-          width="95"
-          height="275"
-          fill="#19191D"
-          className="transition-colors duration-300"
-        />
-
-        {/* ================= UPPER EYES GROUP ================= */}
-        {/* Tilts subtly around eye center (332px 235px) without tilting base */}
-        <motion.g
-          style={{
-            rotate: eyesPointerRotate,
-            transformOrigin: '332px 235px',
-          }}
-        >
           {/* Left Eye */}
           <g>
             {isPasswordFocus ? (
@@ -243,7 +256,7 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
                 }
                 transition={
                   lifecycle === 'intro'
-                    ? { duration: 4.4, times: [0, 0.41, 0.57, 0.73, 0.86, 1.0], ease: 'easeInOut' as const }
+                    ? { type: 'tween' as const, duration: 4.4, times: [0, 0.41, 0.57, 0.73, 0.86, 1.0], ease: 'easeInOut' as const }
                     : { duration: 0.25 }
                 }
               />
@@ -291,14 +304,13 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
                 }
                 transition={
                   lifecycle === 'intro'
-                    ? { duration: 4.4, times: [0, 0.41, 0.57, 0.73, 0.86, 1.0], ease: 'easeInOut' as const }
+                    ? { type: 'tween' as const, duration: 4.4, times: [0, 0.41, 0.57, 0.73, 0.86, 1.0], ease: 'easeInOut' as const }
                     : { duration: 0.25 }
                 }
               />
             )}
           </g>
         </motion.g>
-      </motion.g>
     </motion.g>
   );
 };

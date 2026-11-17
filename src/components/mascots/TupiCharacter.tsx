@@ -23,27 +23,23 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
   // Pointer tracking is enabled ONLY in interactive lifecycle stage
   const isInteractive = lifecycle === 'interactive' && !shouldReduceMotion;
 
-  // GROUND ANCHOR PRESERVATION:
-  // skewX and scaleY anchored at (232px 470px) guarantee the bottom edge
-  // stays strictly horizontal on y = 470 without any diagonal tilting!
-  const bodyPointerSkewX = useTransform(springX, (val) =>
-    isInteractive ? val * -11.0 : 0
-  );
-  const bodyPointerX = useTransform(springX, (val) =>
+  // STRICT GROUND ANCHOR PRESERVATION:
+  // The bottom part of Tupi (y = 280 to y = 470) NEVER moves, tilts, or skews!
+  // All body deformation (like bending in emailFocus from frame_009) is achieved
+  // via continuous bezier path morphing above y = 280, keeping the bottom 190px 100% static!
+  const headPointerX = useTransform(springX, (val) =>
     isInteractive ? val * 5.0 : 0
   );
-  const bodyPointerScaleY = useTransform(springY, (val) =>
-    isInteractive ? 1 - val * 0.03 : 1
+  const headPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 3.5 : 0
   );
-
-  // Upper head tilt around (232px 130px) without tilting the base
   const headPointerRotate = useTransform(springX, (val) =>
-    isInteractive ? val * 2.2 : 0
+    isInteractive ? val * 1.5 : 0
   );
 
   // Pupils strictly bounded within sclera
-  const pupilPointerX = useTransform(springX, (val) => (isInteractive ? val * 2.2 : 0));
-  const pupilPointerY = useTransform(springY, (val) => (isInteractive ? val * 2.0 : 0));
+  const pupilPointerX = useTransform(springX, (val) => (isInteractive ? val * 2.8 : 0));
+  const pupilPointerY = useTransform(springY, (val) => (isInteractive ? val * 2.2 : 0));
 
   // Deterministic WeStud-matched keyframes for all three lifecycle stages
   const bodyVariants = {
@@ -71,6 +67,7 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
       scaleX: [1.02, 1.02, 1.04, 1.0, 1.0],
       opacity: [0, 0, 1, 1, 1],
       transition: {
+        type: 'tween' as const,
         duration: 4.4,
         times: [0, 0.41, 0.57, 0.82, 1.0],
         ease: 'easeInOut' as const,
@@ -87,19 +84,16 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
       opacity: 1,
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
-    // Stage 3: Interactive states
+    // Stage 3: Interactive states - BASE REMAINS 100% FIXED ON GROUND (y=470)
     idle: {
       y: 0,
-      scaleY: shouldReduceMotion ? 1 : [1, 1.025, 1],
+      scaleY: 1,
       scaleX: 1,
       rotate: 0,
       skewX: 0,
       x: 0,
       opacity: 1,
-      transition: {
-        scaleY: { duration: 4.2, repeat: Infinity, ease: 'easeInOut' as const },
-        default: smoothStateTransition,
-      },
+      transition: smoothStateTransition,
     },
     pointerTracking: {
       y: 0,
@@ -111,47 +105,52 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
     emailFocus: {
-      x: 8,
+      x: 0,
       y: 0,
-      skewX: -9,
-      scaleY: 1.02,
+      skewX: 0,
+      scaleY: 1,
+      scaleX: 1,
       rotate: 0,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordFocus: {
-      x: -6,
+      x: 0,
       y: 0,
-      skewX: 5,
-      scaleY: 0.98,
+      skewX: 0,
+      scaleY: 1,
+      scaleX: 1,
       rotate: 0,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordVisible: {
       y: 0,
-      x: 2,
-      skewX: -4,
-      scaleY: 1.01,
+      x: 0,
+      skewX: 0,
+      scaleY: 1,
+      scaleX: 1,
       rotate: 0,
       opacity: 1,
       transition: smoothStateTransition,
     },
     error: {
-      x: -8,
-      y: 0, // Remains grounded on y = 470
-      skewX: 4,
-      scaleY: 0.95,
-      rotate: 0, // Base remains horizontal!
+      x: 0,
+      y: 0,
+      skewX: 0,
+      scaleY: 1,
+      scaleX: 1,
+      rotate: 0,
       opacity: 1,
       transition: { duration: 0.45, ease: 'easeOut' as const },
     },
     success: {
-      y: -26,
+      y: -16,
       scaleY: 1.05,
       scaleX: 0.97,
       x: 0,
       rotate: 0,
+      skewX: 0,
       opacity: 1,
       transition: celebrationSpring,
     },
@@ -171,8 +170,25 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
   const isEmailFocus = lifecycle === 'interactive' && state === 'emailFocus';
   const isSuccess = lifecycle === 'interactive' && state === 'success';
 
-  // Stable canonical rectangular body: strictly anchored to L 305 470 L 160 470!
-  const normalBodyPath = 'M 160 80 L 305 80 L 305 470 L 160 470 Z';
+  // Base from y=280 to y=470 is strictly L 305 470 L 160 470 L 160 280 in ALL states!
+  // This guarantees the bottom 190px is 100% motionless, vertical, and horizontal!
+  const normalBodyPath =
+    'M 160 80 C 208 80 256 80 305 80 C 305 146 305 213 305 280 L 305 470 L 160 470 L 160 280 C 160 213 160 146 160 80 Z';
+  const emailBodyPath =
+    'M 205 95 C 248 106 292 118 335 130 C 322 180 310 230 305 280 L 305 470 L 160 470 L 160 280 C 162 230 178 160 205 95 Z';
+  const passwordBodyPath =
+    'M 140 85 C 185 80 230 80 275 85 C 280 150 290 215 305 280 L 305 470 L 160 470 L 160 280 C 152 215 144 150 140 85 Z';
+  const errorBodyPath =
+    'M 175 105 C 220 115 265 125 310 135 C 310 185 308 235 305 280 L 305 470 L 160 470 L 160 280 C 160 235 168 185 175 105 Z';
+
+  const currentBodyPath =
+    isEmailFocus
+      ? emailBodyPath
+      : isPasswordFocus
+      ? passwordBodyPath
+      : isError
+      ? errorBodyPath
+      : normalBodyPath;
 
   return (
     <motion.g
@@ -183,44 +199,34 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
         transformOrigin: '232px 470px',
       }}
     >
-      {/* Sub-group for pointer-driven skew and scale anchored at fixed base y=470 */}
+      {/* Main Purple Body (Morphing upper arch, bottom 190px is 100% static & vertical) */}
+      <motion.path
+        d={currentBodyPath}
+        animate={{ d: currentBodyPath }}
+        transition={smoothStateTransition}
+        fill="#6528F5"
+      />
+
+      {/* ================= UPPER HEAD & FACIAL GROUP ================= */}
+      {/* Moves and tilts smoothly with body bend and cursor without touching the base */}
       <motion.g
         style={{
-          skewX: bodyPointerSkewX,
-          x: bodyPointerX,
-          scaleY: bodyPointerScaleY,
-          transformOrigin: '232px 470px',
+          x: headPointerX,
+          y: headPointerY,
+          rotate: headPointerRotate,
+          transformOrigin: '232px 130px',
         }}
+        animate={
+          isError
+            ? { x: 15, y: 24, rotate: 8 }
+            : isPasswordFocus
+            ? { x: -25, y: 5, rotate: -6 }
+            : isEmailFocus
+            ? { x: 38, y: 18, rotate: 14 }
+            : { x: 0, y: 0, rotate: 0 }
+        }
+        transition={smoothStateTransition}
       >
-        {/* Main Purple Body (Baseline strictly L 305 470 L 160 470) */}
-        <path
-          d={normalBodyPath}
-          fill="#6528F5"
-        />
-
-        {/* ================= UPPER HEAD & FACIAL GROUP ================= */}
-        {/* Tilts and rotates around (232px 130px) without tilting the base! */}
-        <motion.g
-          animate={
-            isError
-              ? { rotate: -10 }
-              : isPasswordFocus
-              ? { rotate: -3 }
-              : isEmailFocus
-              ? { rotate: 2.5 }
-              : { rotate: 0 }
-          }
-          style={{
-            transformOrigin: '232px 130px',
-          }}
-          transition={smoothStateTransition}
-        >
-          <motion.g
-            style={{
-              rotate: headPointerRotate,
-              transformOrigin: '232px 130px',
-            }}
-          >
             {/* Eyebrows */}
             <motion.line
               x1="220"
@@ -393,9 +399,7 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
                 transition={{ duration: 0.25 }}
               />
             )}
-          </motion.g>
         </motion.g>
-      </motion.g>
     </motion.g>
   );
 };

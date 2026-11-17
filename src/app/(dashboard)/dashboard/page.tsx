@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import {
   FadeIn,
@@ -105,11 +104,6 @@ export default function DashboardPage() {
       <FadeIn direction="down">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-bold uppercase tracking-wider">
-                Tuntas Unified Dashboard
-              </span>
-            </div>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">
               Welcome back to your workspace!
             </h2>
@@ -332,12 +326,6 @@ export default function DashboardPage() {
                         </p>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <Badge variant={task.priority} size="sm">
-                        {task.priority}
-                      </Badge>
-                    </div>
                   </AnimatedItem>
                 ))}
               </AnimatedList>
@@ -376,9 +364,6 @@ export default function DashboardPage() {
                   >
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-bold text-slate-900 truncate">{proj.title}</h4>
-                      <Badge variant="in_progress" size="sm">
-                        {proj.status}
-                      </Badge>
                     </div>
 
                     <div>
@@ -421,9 +406,6 @@ export default function DashboardPage() {
                 </h3>
                 <p className="text-xs text-slate-500">Tasks completed over the past 7 days.</p>
               </div>
-              <Badge variant="success" size="sm">
-                Velocity
-              </Badge>
             </div>
 
             <div className="grid grid-cols-7 gap-2 pt-2">
@@ -490,9 +472,13 @@ export default function DashboardPage() {
 
                     <Button
                       size="sm"
-                      variant={habit.is_completed_today ? 'primary' : 'secondary'}
+                      variant={habit.is_completed_today ? 'secondary' : 'primary'}
                       onClick={() => handleToggleHabit(habit.id)}
-                      className="h-7 text-xs px-2.5"
+                      className={`h-7 text-xs px-2.5 ${
+                        habit.is_completed_today
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100'
+                          : ''
+                      }`}
                     >
                       {habit.is_completed_today ? 'Done ✓' : 'Check'}
                     </Button>

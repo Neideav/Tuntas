@@ -52,11 +52,13 @@ export function Navbar() {
   const loadUser = useCallback(async () => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('tuntas_user');
-      if (stored) {
+      if (stored && stored !== 'undefined') {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.name) setUserName(parsed.name);
-          if (parsed.email) setUserEmail(parsed.email);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.name) setUserName(parsed.name);
+            if (parsed.email) setUserEmail(parsed.email);
+          }
         } catch {
           // ignore
         }

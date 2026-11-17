@@ -79,11 +79,15 @@ export default function SettingsPage() {
         // Update user in localStorage
         const stored = localStorage.getItem('tuntas_user');
         if (stored) {
-          const user = JSON.parse(stored);
-          localStorage.setItem(
-            'tuntas_user',
-            JSON.stringify({ ...user, name, email, timezone })
-          );
+          try {
+            const user = JSON.parse(stored);
+            localStorage.setItem(
+              'tuntas_user',
+              JSON.stringify({ ...user, name, email, timezone })
+            );
+          } catch {
+            // ignore
+          }
         }
 
         // Notify Navbar and other components of updated profile

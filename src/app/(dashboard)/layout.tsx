@@ -12,7 +12,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
   return (
     <div
-      className={`min-h-screen bg-[#090d16] text-slate-100 dark transition-[padding] duration-200 ease-out pl-0 ${
+      className={`min-h-screen transition-[padding] duration-200 ease-out pl-0 ${
         isCollapsed ? 'md:pl-20' : 'md:pl-64'
       }`}
     >

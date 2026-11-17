@@ -357,11 +357,6 @@ export default function ExaminationsPage() {
       {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-bold uppercase tracking-wider">
-              Dedicated Examination Subsystem
-            </span>
-          </div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">Examination Platform</h2>
           <p className="mt-1 text-xs text-slate-500">
             Author multi-type question banks, configure proctored exam blueprints, and evaluate student essay submissions.

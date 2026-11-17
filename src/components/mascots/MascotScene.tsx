@@ -171,7 +171,7 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
             ? { x: [-3, 3, -3, 3, -1, 1, 0] }
             : {}
         }
-        transition={{ duration: 0.45 }}
+        transition={{ type: 'tween', duration: 0.45, ease: 'easeInOut' }}
       >
         {/* ================= LAYER 1: TUPI (Purple Character - Background) ================= */}
         <TupiCharacter

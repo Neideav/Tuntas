@@ -433,7 +433,7 @@ export default function TasksPage() {
 
           <button
             onClick={() => setIsCreateOpen(true)}
-            className="h-11 px-5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold text-sm shadow-sm flex items-center gap-2 transition cursor-pointer"
+            className="h-11 px-5 rounded-xl bg-[#19191D] hover:bg-black active:bg-[#111113] text-white font-semibold text-sm shadow-xs hover:shadow-sm flex items-center gap-2 transition cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>New Task</span>

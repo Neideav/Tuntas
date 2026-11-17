@@ -30,25 +30,16 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
     }
 
     return () => {
-      document.body.style.backgroundColor = originalBodyBg;
-      document.documentElement.style.backgroundColor = originalHtmlBg;
-      if (htmlHadDark) {
-        document.documentElement.classList.add('dark');
-      }
+      document.body.style.backgroundColor = originalBodyBg || '';
+      document.documentElement.style.backgroundColor = originalHtmlBg || '';
+      document.documentElement.classList.remove('dark');
     };
   }, []);
 
   return (
     <div className="w-full min-h-dvh h-screen flex flex-col lg:flex-row overflow-x-hidden selection:bg-[#6528F5] selection:text-white">
       {/* ================= LEFT PANEL: FULLSCREEN ILLUSTRATION (~55%) ================= */}
-      <div className="w-full lg:w-[55%] h-[360px] sm:h-[420px] lg:h-full bg-[#EAEAEA] relative overflow-hidden flex flex-col justify-between p-6 sm:p-10 lg:p-12 shrink-0">
-        {/* Top Branding Pill */}
-        <div className="flex items-center gap-2 z-10">
-          <span className="text-[11px] font-black tracking-widest uppercase text-[#19191D]/60 bg-white/80 backdrop-blur-xs px-3.5 py-1 rounded-full border border-black/5 shadow-2xs">
-            Tuntas Platform
-          </span>
-        </div>
-
+      <div className="w-full lg:w-[55%] h-[360px] sm:h-[420px] lg:h-full bg-[#EAEAEA] relative overflow-hidden flex flex-col justify-end p-6 sm:p-10 lg:p-12 shrink-0">
         {/* Massive Interactive Mascot Scene anchored to the bottom edge */}
         <div className="w-full flex-1 flex items-end justify-center z-10 min-h-0 pt-4 pb-0">
           <AuthCharacters

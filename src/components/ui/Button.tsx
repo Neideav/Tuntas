@@ -26,7 +26,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseClasses =
-    'inline-flex items-center justify-center font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 disabled:opacity-50 disabled:pointer-events-none rounded-xl select-none cursor-pointer';
+    'inline-flex items-center justify-center font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900/15 disabled:opacity-50 disabled:pointer-events-none rounded-xl select-none cursor-pointer transition-colors';
 
   const sizeClasses: Record<string, string> = {
     sm: 'h-8 px-3 text-xs gap-1.5',
@@ -36,7 +36,7 @@ export function Button({
   };
 
   const variantClasses: Record<string, string> = {
-    primary: 'bg-sky-600 text-white hover:bg-sky-700 shadow-sm shadow-sky-600/20',
+    primary: 'bg-[#19191D] text-white hover:bg-black active:bg-[#111113] shadow-xs hover:shadow-sm border border-transparent',
     secondary: 'bg-slate-100 text-slate-800 hover:bg-slate-200 border border-slate-200/60',
     outline: 'border border-slate-300 text-slate-700 bg-white hover:bg-slate-50',
     ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',

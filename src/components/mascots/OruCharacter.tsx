@@ -22,55 +22,50 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
 
   const isInteractive = lifecycle === 'interactive' && !shouldReduceMotion;
 
-  // GROUND ANCHOR PRESERVATION:
-  // Using skewX and bottom-anchored scaleX/scaleY at (165px 470px)
-  // guarantees the flat bottom baseline M 40 470 ... 290 470 Z remains 100% horizontal!
-  const bodyPointerSkewX = useTransform(springX, (val) =>
-    isInteractive ? val * -6.5 : 0
+  // STRICT GROUND ANCHOR PRESERVATION:
+  // The bottom dome baseline (y=470) NEVER moves, tilts, or skews!
+  // All cursor tracking is accomplished through 3D face parallax inside the fixed dome.
+  const facePointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 6.5 : 0
   );
-  const bodyPointerX = useTransform(springX, (val) =>
-    isInteractive ? val * 3.5 : 0
+  const facePointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 4.0 : 0
   );
-  const bodyPointerScaleX = useTransform(springX, (val) =>
-    isInteractive ? 1 + Math.abs(val) * 0.04 : 1
-  );
-  const bodyPointerScaleY = useTransform(springY, (val) =>
-    isInteractive ? 1 - val * 0.03 : 1
-  );
-
-  // Facial elements tilt around (165px 412px) without tilting the flat bottom edge
   const facePointerRotate = useTransform(springX, (val) =>
-    isInteractive ? val * 2.2 : 0
+    isInteractive ? val * 1.8 : 0
   );
 
   // Eyes tracking pointer
-  const eyePointerX = useTransform(springX, (val) => (isInteractive ? val * 3.8 : 0));
-  const eyePointerY = useTransform(springY, (val) => (isInteractive ? val * 2.5 : 0));
+  const eyePointerX = useTransform(springX, (val) => (isInteractive ? val * 3.5 : 0));
+  const eyePointerY = useTransform(springY, (val) => (isInteractive ? val * 2.2 : 0));
 
   // Deterministic WeStud-matched keyframes for all three lifecycle stages
   const bodyVariants = {
     // Stage 0: Pre-intro hidden state (0.0s - 1.8s)
     hidden: {
-      x: -180,
-      y: -70,
-      rotate: 20,
+      x: -160,
+      y: 0,
+      rotate: 0,
       skewX: 0,
-      scale: 0.50,
+      scaleX: 0.85,
+      scaleY: 0.85,
       opacity: 0,
     },
     // Stage 1: Intro sequence (0.0s - 4.4s)
     // 0s-1.8s: offscreen far left, hidden
-    // 2.5s: enters as rounded pill floating at mid-left
-    // 3.5s: rolls into foreground, expands into wide dome
+    // 2.5s: enters firmly on the ground baseline
+    // 3.5s: rolls into foreground, expands into full wide dome
     // 4.4s: settled flat on baseline y=470
     intro: {
-      x: [-180, -180, -75, 0, 0],
-      y: [-70, -70, -45, 0, 0],
-      rotate: [20, 20, 16, 0, 0],
+      x: [-160, -160, -50, 0, 0],
+      y: [0, 0, 0, 0, 0],
+      rotate: [0, 0, 0, 0, 0],
       skewX: [0, 0, 0, 0, 0],
-      scale: [0.50, 0.50, 0.62, 0.98, 1.0],
+      scaleX: [0.85, 0.85, 0.92, 0.98, 1.0],
+      scaleY: [0.85, 0.85, 0.92, 0.98, 1.0],
       opacity: [0, 0, 1, 1, 1],
       transition: {
+        type: 'tween' as const,
         duration: 4.4,
         times: [0, 0.41, 0.57, 0.82, 1.0],
         ease: 'easeInOut' as const,
@@ -84,23 +79,19 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
       scaleY: 1,
       rotate: 0,
       skewX: 0,
-      scale: 1,
       opacity: 1,
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
-    // Stage 3: Interactive states
+    // Stage 3: Interactive states - BASE REMAINS 100% FIXED ON GROUND (y=470)
     idle: {
-      scaleY: shouldReduceMotion ? 1 : [1, 1.025, 1],
+      scaleY: 1,
       scaleX: 1,
       y: 0,
       rotate: 0,
       x: 0,
       skewX: 0,
       opacity: 1,
-      transition: {
-        scaleY: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' as const },
-        default: smoothStateTransition,
-      },
+      transition: smoothStateTransition,
     },
     pointerTracking: {
       scaleY: 1,
@@ -108,52 +99,54 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
       y: 0,
       rotate: 0,
       x: 0,
+      skewX: 0,
       opacity: 1,
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
     emailFocus: {
-      x: 6,
+      x: 0,
       y: 0,
       rotate: 0,
-      skewX: -6.0,
-      scaleX: 1.04,
-      scaleY: 0.98,
+      skewX: 0,
+      scaleX: 1,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordFocus: {
       rotate: 0,
       y: 0,
-      scaleY: 0.96, // Squashes down into the floor
-      scaleX: 1.03,
-      skewX: 2,
-      x: -2,
+      scaleY: 1,
+      scaleX: 1,
+      skewX: 0,
+      x: 0,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordVisible: {
       y: 0,
       x: 0,
-      scaleY: 1.01,
+      scaleY: 1,
+      scaleX: 1,
       rotate: 0,
-      skewX: -2,
+      skewX: 0,
       opacity: 1,
       transition: smoothStateTransition,
     },
     error: {
-      x: -4,
-      y: 0, // Remains grounded
+      x: 0,
+      y: 0,
       rotate: 0,
-      scaleY: 0.95,
-      scaleX: 1.04,
-      skewX: 3,
+      scaleY: 1,
+      scaleX: 1,
+      skewX: 0,
       opacity: 1,
       transition: { duration: 0.45, ease: 'easeOut' as const },
     },
     success: {
-      scale: 1.08,
-      y: -24,
+      scaleX: 1.05,
       scaleY: 1.05,
+      y: -16,
       x: 0,
       rotate: 0,
       skewX: 0,
@@ -175,6 +168,30 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
   const isSuccess = lifecycle === 'interactive' && state === 'success';
   const isEmailFocus = lifecycle === 'interactive' && state === 'emailFocus';
 
+  // Base from (30, 470) to (300, 470) is 100% strictly IDENTICAL in all states!
+  // The bottom baseline NEVER moves, while the crest squashes and leans forward dynamically.
+  const normalOruPath =
+    'M 30 470 C 30 398 90 340 165 340 C 240 340 300 398 300 470 Z';
+  const emailOruPath =
+    'M 30 470 C 30 415 110 342 185 342 C 255 342 300 415 300 470 Z';
+  const passwordOruPath =
+    'M 30 470 C 30 420 85 360 150 360 C 225 360 300 420 300 470 Z';
+  const errorOruPath =
+    'M 30 470 C 30 420 90 355 155 355 C 230 355 300 420 300 470 Z';
+  const successOruPath =
+    'M 30 470 C 30 390 90 328 165 328 C 240 328 300 390 300 470 Z';
+
+  const currentBodyPath =
+    isEmailFocus
+      ? emailOruPath
+      : isPasswordFocus
+      ? passwordOruPath
+      : isError
+      ? errorOruPath
+      : isSuccess
+      ? successOruPath
+      : normalOruPath;
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -184,31 +201,37 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
         transformOrigin: '165px 470px',
       }}
     >
-      {/* Sub-group for pointer-driven skew and scale anchored at fixed base y=470 */}
+      {/* Main Semicircle Dome Body (Morphing crest, baseline on y=470 is 100% static & horizontal) */}
+      <motion.path
+        d={currentBodyPath}
+        animate={{ d: currentBodyPath }}
+        transition={smoothStateTransition}
+        fill="#FF852E"
+        className="transition-colors duration-300"
+      />
+
+      {/* ================= UPPER FACIAL GROUP ================= */}
+      {/* Moves and rotates smoothly with cursor parallax and body lean, leaving the dome base 100% immobile */}
       <motion.g
         style={{
-          skewX: bodyPointerSkewX,
-          x: bodyPointerX,
-          scaleX: bodyPointerScaleX,
-          scaleY: bodyPointerScaleY,
-          transformOrigin: '165px 470px',
+          x: facePointerX,
+          y: facePointerY,
+          rotate: facePointerRotate,
+          transformOrigin: '165px 412px',
         }}
+        animate={
+          isEmailFocus
+            ? { x: 14, y: 0, rotate: 2 }
+            : isPasswordFocus
+            ? { x: -3, y: 3, rotate: -2 }
+            : isError
+            ? { x: -3, y: 2, rotate: -3 }
+            : isSuccess
+            ? { y: -5 }
+            : { x: 0, y: 0, rotate: 0 }
+        }
+        transition={smoothStateTransition}
       >
-        {/* Main Semicircle Dome Body (Flat base on y=470) */}
-        <path
-          d="M 40 470 A 125 125 0 0 1 290 470 Z"
-          fill="#FF852E"
-          className="transition-colors duration-300"
-        />
-
-        {/* ================= UPPER FACIAL GROUP ================= */}
-        {/* Tilts around (165px 412px) without rotating the flat baseline */}
-        <motion.g
-          style={{
-            rotate: facePointerRotate,
-            transformOrigin: '165px 412px',
-          }}
-        >
           {/* Left Eye */}
           {isPasswordFocus || isPasswordVisible ? (
             <path
@@ -326,11 +349,31 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
               strokeWidth="3"
               strokeLinecap="round"
             />
+          ) : isEmailFocus ? (
+            <motion.ellipse
+              key="oru-mouth-o"
+              cx="171"
+              cy="421"
+              rx="4.8"
+              ry="6.2"
+              fill="#19191D"
+              style={{ transformOrigin: '171px 421px' }}
+              initial={{ scale: 0.2, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+            />
           ) : (
-            <path d="M 160 418 Q 171 432 182 418 Z" fill="#19191D" />
+            <motion.path
+              key="oru-mouth-smile"
+              d="M 160 418 Q 171 432 182 418 Z"
+              fill="#19191D"
+              style={{ transformOrigin: '171px 425px' }}
+              initial={{ scale: 0.8, opacity: 0.7 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.2 }}
+            />
           )}
         </motion.g>
-      </motion.g>
     </motion.g>
   );
 };

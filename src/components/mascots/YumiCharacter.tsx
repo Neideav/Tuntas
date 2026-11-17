@@ -22,22 +22,17 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
 
   const isInteractive = lifecycle === 'interactive' && !shouldReduceMotion;
 
-  // GROUND ANCHOR PRESERVATION:
-  // Using skewX and scaleY anchored at (385px 470px)
-  // keeps the bottom edge L 440 470 L 330 470 perfectly horizontal on y = 470!
-  const bodyPointerSkewX = useTransform(springX, (val) =>
-    isInteractive ? val * -6.5 : 0
+  // STRICT GROUND ANCHOR PRESERVATION:
+  // The bottom edge of Yumi (L 440 470 L 330 470) strictly sits motionless and vertical at y=470!
+  // All cursor tracking is performed by the upper head, eye, and arm.
+  const headPointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 5.0 : 0
   );
-  const bodyPointerX = useTransform(springX, (val) =>
-    isInteractive ? val * 4.5 : 0
+  const headPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 3.5 : 0
   );
-  const bodyPointerScaleY = useTransform(springY, (val) =>
-    isInteractive ? 1 - val * 0.02 : 1
-  );
-
-  // Upper head tilt around (385px 330px) without tilting the base
   const headPointerRotate = useTransform(springX, (val) =>
-    isInteractive ? val * 2.2 : 0
+    isInteractive ? val * 1.8 : 0
   );
   const armPointerRotate = useTransform(springY, (val) =>
     isInteractive ? val * 6.0 : 0
@@ -73,6 +68,7 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
       scaleX: [1.05, 1.05, 1.05, 1.0, 1.0],
       opacity: [0, 0, 1, 1, 1],
       transition: {
+        type: 'tween' as const,
         duration: 4.4,
         times: [0, 0.41, 0.57, 0.82, 1.0],
         ease: 'easeInOut' as const,
@@ -89,18 +85,15 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
       opacity: 1,
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
-    // Stage 3: Interactive states
+    // Stage 3: Interactive states - BASE REMAINS 100% FIXED ON GROUND (y=470)
     idle: {
-      scaleY: shouldReduceMotion ? 1 : [1, 1.02, 1],
+      scaleY: 1,
       rotate: 0,
       skewX: 0,
       x: 0,
       y: 0,
       opacity: 1,
-      transition: {
-        scaleY: { duration: 4.5, repeat: Infinity, ease: 'easeInOut' as const, delay: 0.6 },
-        default: smoothStateTransition,
-      },
+      transition: smoothStateTransition,
     },
     pointerTracking: {
       scaleY: 1,
@@ -111,45 +104,45 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
       transition: { duration: 0.2, ease: 'easeOut' as const },
     },
     emailFocus: {
-      x: 6,
+      x: 0,
       y: 0,
       rotate: 0,
-      skewX: -6.0,
-      scaleY: 1.02,
+      skewX: 0,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordFocus: {
-      x: -3,
+      x: 0,
       y: 0,
       rotate: 0,
-      skewX: 3,
-      scaleY: 0.96, // Squashes down with base fixed
+      skewX: 0,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     passwordVisible: {
       y: 0,
-      x: 3,
+      x: 0,
       rotate: 0,
-      skewX: -2,
-      scaleY: 1.01,
+      skewX: 0,
+      scaleY: 1,
       opacity: 1,
       transition: smoothStateTransition,
     },
     error: {
-      x: 4,
-      y: 0, // Remains grounded
-      scaleY: 0.94,
+      x: 0,
+      y: 0,
+      scaleY: 1,
       rotate: 0,
-      skewX: 3,
+      skewX: 0,
       opacity: 1,
       transition: { duration: 0.45, ease: 'easeOut' as const },
     },
     success: {
-      y: -22,
+      y: -16,
       x: 0,
-      rotate: [0, -4, 4, 0],
+      rotate: 0,
       skewX: 0,
       scaleY: 1.04,
       opacity: 1,
@@ -170,6 +163,22 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
   const isSuccess = lifecycle === 'interactive' && state === 'success';
   const isEmailFocus = lifecycle === 'interactive' && state === 'emailFocus';
 
+  // Base from y=360 to y=470 is strictly L 440 470 L 330 470 L 330 360 in ALL states!
+  // The bottom 110px NEVER moves, while the upper arch leans forward towards the form.
+  const normalYumiPath =
+    'M 330 360 C 330 310 355 270 385 270 C 415 270 440 310 440 360 L 440 470 L 330 470 L 330 360 Z';
+  const emailYumiPath =
+    'M 330 360 C 334 310 368 272 398 272 C 428 272 448 315 440 360 L 440 470 L 330 470 L 330 360 Z';
+  const passwordYumiPath =
+    'M 330 360 C 328 310 348 270 376 270 C 404 270 435 310 440 360 L 440 470 L 330 470 L 330 360 Z';
+
+  const currentYumiPath =
+    isEmailFocus
+      ? emailYumiPath
+      : isPasswordFocus
+      ? passwordYumiPath
+      : normalYumiPath;
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -179,30 +188,37 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
         transformOrigin: '385px 470px',
       }}
     >
-      {/* Sub-group for pointer-driven skew and scale anchored at fixed base y=470 */}
+      {/* Main Arch / Pill Body (Morphing upper head, baseline L 440 470 L 330 470 Z strictly motionless on y=470) */}
+      <motion.path
+        d={currentYumiPath}
+        animate={{ d: currentYumiPath }}
+        transition={smoothStateTransition}
+        fill="#F1D20A"
+        className="transition-colors duration-300"
+      />
+
+      {/* ================= UPPER HEAD & EYE GROUP ================= */}
+      {/* Tilts and moves smoothly with cursor parallax without moving the base */}
       <motion.g
         style={{
-          skewX: bodyPointerSkewX,
-          x: bodyPointerX,
-          scaleY: bodyPointerScaleY,
-          transformOrigin: '385px 470px',
+          x: headPointerX,
+          y: headPointerY,
+          rotate: headPointerRotate,
+          transformOrigin: '385px 330px',
         }}
+        animate={
+          isEmailFocus
+            ? { x: 13, y: 2, rotate: 3 }
+            : isPasswordFocus
+            ? { x: -9, y: 0, rotate: -3 }
+            : isError
+            ? { x: -3, y: 2, rotate: -3 }
+            : isSuccess
+            ? { y: -5 }
+            : { x: 0, y: 0, rotate: 0 }
+        }
+        transition={smoothStateTransition}
       >
-        {/* Main Arch / Pill Body (Baseline L 440 470 L 330 470 Z) */}
-        <path
-          d="M 330 325 A 55 55 0 0 1 440 325 L 440 470 L 330 470 Z"
-          fill="#F1D20A"
-          className="transition-colors duration-300"
-        />
-
-        {/* ================= UPPER HEAD & EYE GROUP ================= */}
-        {/* Tilts around (385px 330px) without rotating the base */}
-        <motion.g
-          style={{
-            rotate: headPointerRotate,
-            transformOrigin: '385px 330px',
-          }}
-        >
           {/* Eye */}
           {isPasswordFocus ? (
             <path
@@ -297,7 +313,6 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
             </motion.g>
           </motion.g>
         )}
-      </motion.g>
     </motion.g>
   );
 };
