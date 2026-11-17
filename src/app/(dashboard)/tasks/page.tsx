@@ -25,7 +25,7 @@ import {
   Hourglass,
   FileSearch,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getCachedData } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -33,6 +33,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Tabs } from '@/components/ui/Tabs';
 import { AvatarStack } from '@/components/ui/AvatarStack';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { TaskBoardSkeleton } from '@/components/ui/Skeleton';
 
 interface Subtask {
   id: number;
@@ -77,8 +78,8 @@ const COLUMNS: {
 ];
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<Task[]>(() => getCachedData<Task[]>('/tasks') || []);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/tasks'));
   const [viewMode, setViewMode] = useState<'kanban' | 'table' | 'list' | 'timelines'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -177,9 +178,11 @@ export default function TasksPage() {
     }
   };
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && tasks.length === 0) {
+        setLoading(true);
+      }
       const [res, tagsRes] = await Promise.all([
         api.get('/tasks'),
         api.get('/tags'),
@@ -198,7 +201,8 @@ export default function TasksPage() {
   };
 
   useEffect(() => {
-    fetchTasks();
+    const hasCache = !!getCachedData('/tasks');
+    fetchTasks(hasCache);
   }, []);
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -450,10 +454,8 @@ export default function TasksPage() {
       />
 
       {/* Main Content Area */}
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-        </div>
+      {loading && tasks.length === 0 ? (
+        <TaskBoardSkeleton />
       ) : filteredTasks.length === 0 ? (
         <EmptyState
           title="No tasks found"

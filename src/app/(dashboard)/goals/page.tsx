@@ -12,12 +12,13 @@ import {
   Award,
   Edit2,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getCachedData } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { GoalsSkeleton } from '@/components/ui/Skeleton';
 
 interface Milestone {
   id: number;
@@ -40,8 +41,8 @@ interface Goal {
 }
 
 export default function GoalsPage() {
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [goals, setGoals] = useState<Goal[]>(() => getCachedData<Goal[]>('/goals') || []);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/goals'));
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedGoalForMilestone, setSelectedGoalForMilestone] = useState<Goal | null>(null);
 
@@ -113,9 +114,11 @@ export default function GoalsPage() {
     }
   };
 
-  const fetchGoals = async () => {
+  const fetchGoals = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && goals.length === 0) {
+        setLoading(true);
+      }
       const res = await api.get('/goals');
       if (res.data?.success) {
         setGoals(res.data.data || []);
@@ -128,7 +131,8 @@ export default function GoalsPage() {
   };
 
   useEffect(() => {
-    fetchGoals();
+    const hasCache = !!getCachedData('/goals');
+    fetchGoals(hasCache);
   }, []);
 
   const handleCreateGoal = async (e: React.FormEvent) => {
@@ -244,10 +248,8 @@ export default function GoalsPage() {
       </div>
 
       {/* Goals Content */}
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-        </div>
+      {loading && goals.length === 0 ? (
+        <GoalsSkeleton />
       ) : goals.length === 0 ? (
         <EmptyState
           icon={Target}

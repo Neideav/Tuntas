@@ -26,7 +26,7 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
   // The bottom edge of Yumi (L 440 470 L 330 470) strictly sits motionless and vertical at y=470!
   // All cursor tracking is performed by the upper head, eye, and arm.
   const headPointerX = useTransform(springX, (val) =>
-    isInteractive ? val * 5.0 : 0
+    isInteractive ? val * 11.2 : 0
   );
   const headPointerY = useTransform(springY, (val) =>
     isInteractive ? val * 3.5 : 0
@@ -34,9 +34,22 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
   const headPointerRotate = useTransform(springX, (val) =>
     isInteractive ? val * 1.8 : 0
   );
-  const armPointerRotate = useTransform(springY, (val) =>
-    isInteractive ? val * 6.0 : 0
+
+  // Dynamic arm tracking responding to cursor 2D motion and body sway
+  const armPointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 6.8 : 0
   );
+  const armPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 3.0 : 0
+  );
+  const armPointerRotate = useTransform([springX, springY], ([x, y]) => {
+    if (!isInteractive) return 0;
+    const valX = x as number;
+    const valY = y as number;
+    // Follows cursor: raises up when cursor moves up, lowers when cursor moves down,
+    // reaches forward towards the right when cursor moves right
+    return valY * 24 - valX * 14;
+  });
 
   // Eye movement bounded inside face
   const eyePointerX = useTransform(springX, (val) => (isInteractive ? val * 3.2 : 0));
@@ -179,6 +192,24 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
       ? passwordYumiPath
       : normalYumiPath;
 
+  // Dynamic continuous bezier morphing for cursor tracking
+  // Anchored strictly at the floor baseline (y=470), while the entire arch & pillar flexes organically
+  const dynamicYumiPath = useTransform(springX, (val) => {
+    if (!isInteractive) return currentYumiPath;
+    const sway = val * 16;
+    if (isEmailFocus) {
+      const peakX = 398 + sway * 0.35;
+      return `M 330 470 C 330 445 ${332 + sway * 0.12} 415 ${336 + sway * 0.22} 360 C ${340 + sway * 0.30} 310 ${368 + sway * 0.35} 272 ${peakX} 272 C ${428 + sway * 0.35} 272 ${446 + sway * 0.30} 315 ${442 + sway * 0.22} 360 C ${440 + sway * 0.12} 415 440 445 440 470 Z`;
+    }
+    if (isPasswordFocus) {
+      const peakX = 376 + sway * 0.35;
+      return `M 330 470 C 330 445 ${329 + sway * 0.12} 415 ${330 + sway * 0.20} 360 C ${330 + sway * 0.28} 310 ${348 + sway * 0.35} 270 ${peakX} 270 C ${404 + sway * 0.35} 270 ${432 + sway * 0.28} 310 ${437 + sway * 0.20} 360 C ${440 + sway * 0.12} 415 440 445 440 470 Z`;
+    }
+    // Full body organic flex: pinned strictly at baseline y=470 with vertical tangents at y=445..470
+    const peakX = 385 + sway;
+    return `M 330 470 C 330 445 ${330 + sway * 0.18} 410 ${330 + sway * 0.42} 360 C ${330 + sway * 0.70} 310 ${355 + sway * 0.90} 270 ${peakX} 270 C ${415 + sway * 0.90} 270 ${440 + sway * 0.70} 310 ${440 + sway * 0.42} 360 C ${440 + sway * 0.18} 410 440 445 440 470 Z`;
+  });
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -190,9 +221,7 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
     >
       {/* Main Arch / Pill Body (Morphing upper head, baseline L 440 470 L 330 470 Z strictly motionless on y=470) */}
       <motion.path
-        d={currentYumiPath}
-        animate={{ d: currentYumiPath }}
-        transition={smoothStateTransition}
+        d={dynamicYumiPath}
         fill="#F1D20A"
         className="transition-colors duration-300"
       />
@@ -278,17 +307,22 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
         ) : (
           <motion.g
             style={{
+              x: armPointerX,
+              y: armPointerY,
               transformOrigin: '385px 345px',
             }}
             animate={
               isPasswordFocus
-                ? { rotate: -124, transition: { type: 'spring', stiffness: 320, damping: 22 } }
+                ? { x: -3, y: 0, rotate: -124, transition: { type: 'spring', stiffness: 320, damping: 22 } }
                 : isPasswordVisible
-                ? { rotate: -92, transition: { type: 'spring', stiffness: 280, damping: 20 } }
+                ? { x: -1, y: 0, rotate: -92, transition: { type: 'spring', stiffness: 280, damping: 20 } }
+                : isEmailFocus
+                ? { x: 8, y: -2, rotate: -14, transition: smoothStateTransition }
                 : isSuccess
-                ? { rotate: -38, transition: celebrationSpring }
-                : { rotate: 0 }
+                ? { y: -8, rotate: -45, transition: celebrationSpring }
+                : { x: 0, y: 0, rotate: 0 }
             }
+            transition={smoothStateTransition}
           >
             <motion.g
               style={

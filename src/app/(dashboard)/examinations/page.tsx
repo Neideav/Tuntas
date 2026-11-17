@@ -24,26 +24,27 @@ import {
   Code2,
   HelpCircle,
 } from 'lucide-react';
-import api, { extractApiErrorMessage } from '@/lib/api';
+import api, { extractApiErrorMessage, getCachedData } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Tabs } from '@/components/ui/Tabs';
+import { ExaminationsSkeleton } from '@/components/ui/Skeleton';
 
 export default function ExaminationsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'schedules' | 'blueprints' | 'banks' | 'grading' | 'history'>('schedules');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/examinations'));
 
-  // Data states
-  const [examinations, setExaminations] = useState<any[]>([]);
-  const [blueprints, setBlueprints] = useState<any[]>([]);
-  const [banks, setBanks] = useState<any[]>([]);
-  const [attempts, setAttempts] = useState<any[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
-  const [gradingQueue, setGradingQueue] = useState<any[]>([]);
+  // Data states with instant cached restoration
+  const [examinations, setExaminations] = useState<any[]>(() => getCachedData<any[]>('/examinations') || []);
+  const [blueprints, setBlueprints] = useState<any[]>(() => getCachedData<any[]>('/exam-blueprints') || []);
+  const [banks, setBanks] = useState<any[]>(() => getCachedData<any[]>('/question-banks') || []);
+  const [attempts, setAttempts] = useState<any[]>(() => getCachedData<any[]>('/exam-attempts') || []);
+  const [courses, setCourses] = useState<any[]>(() => getCachedData<any[]>('/courses') || []);
+  const [gradingQueue, setGradingQueue] = useState<any[]>(() => getCachedData<any[]>('/exam-grading') || []);
 
   // Modals
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -94,9 +95,11 @@ export default function ExaminationsPage() {
   const [gradesInput, setGradesInput] = useState<Record<number, { awarded_points: number; feedback: string }>>({});
   const [submittingGrade, setSubmittingGrade] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && examinations.length === 0) {
+        setLoading(true);
+      }
       const [examRes, bpRes, bankRes, attemptsRes, coursesRes, gradingRes] = await Promise.all([
         api.get('/examinations'),
         api.get('/exam-blueprints'),
@@ -120,7 +123,8 @@ export default function ExaminationsPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    const hasCache = !!getCachedData('/examinations');
+    fetchData(hasCache);
   }, []);
 
   const handleStartExam = async (blueprintId: number) => {
@@ -405,10 +409,8 @@ export default function ExaminationsPage() {
         onChange={(id) => setActiveTab(id as any)}
       />
 
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-        </div>
+      {loading && examinations.length === 0 ? (
+        <ExaminationsSkeleton />
       ) : activeTab === 'schedules' ? (
         /* SCHEDULES TAB */
         examinations.length === 0 ? (

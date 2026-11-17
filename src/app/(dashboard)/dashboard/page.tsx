@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
@@ -21,9 +21,10 @@ import {
   ArrowRight,
   Check,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getCachedData } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { DashboardSkeleton } from '@/components/ui/Skeleton';
 import {
   FadeIn,
   StaggerContainer,
@@ -35,12 +36,15 @@ import {
 import { SPRING_TRANSITIONS } from '@/lib/animations';
 
 export default function DashboardPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  // Synchronous cache read for 0ms return renders
+  const [data, setData] = useState<any>(() => getCachedData<any>('/dashboard'));
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/dashboard'));
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && !data) {
+        setLoading(true);
+      }
       const res = await api.get('/dashboard');
       if (res.data?.success) {
         setData(res.data.data);
@@ -50,40 +54,108 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [data]);
 
   useEffect(() => {
-    fetchDashboard();
+    // If we already have cached data, revalidate silently in the background
+    const hasCache = !!getCachedData('/dashboard');
+    fetchDashboard(hasCache);
   }, []);
 
+  // Smooth, instant Optimistic Task Toggle
   const handleToggleTask = async (taskId: number) => {
+    if (!data) return;
+
+    const previousData = data;
+    const targetTask = data.today_tasks?.find((t: any) => t.id === taskId);
+    if (!targetTask) return;
+
+    const willComplete = targetTask.status !== 'completed';
+    const updatedStatus = willComplete ? 'completed' : 'todo';
+    const completedDiff = willComplete ? 1 : -1;
+    const currentCompleted = data.metrics?.tasks_completed_count || 0;
+    const newCompletedCount = Math.max(0, currentCompleted + completedDiff);
+    const totalCount = data.metrics?.tasks_total_count || 1;
+    const newPercentage = Math.round((newCompletedCount / Math.max(1, totalCount)) * 100);
+
+    // Instant UI update
+    setData((prev: any) => ({
+      ...prev,
+      today_tasks: prev.today_tasks?.map((t: any) =>
+        t.id === taskId ? { ...t, status: updatedStatus } : t
+      ),
+      metrics: {
+        ...prev.metrics,
+        tasks_completed_count: newCompletedCount,
+        completion_rate_percentage: newPercentage,
+      },
+    }));
+
+    // Background sync
     try {
       const res = await api.patch(`/tasks/${taskId}/toggle`);
-      if (res.data?.success) {
-        fetchDashboard();
+      if (!res.data?.success) {
+        setData(previousData);
+      } else {
+        fetchDashboard(true);
       }
     } catch (err) {
       console.error(err);
+      setData(previousData);
     }
   };
 
+  // Smooth, instant Optimistic Habit Toggle
   const handleToggleHabit = async (habitId: number) => {
+    if (!data) return;
+
+    const previousData = data;
+    const targetHabit = data.habits?.find((h: any) => h.id === habitId);
+    if (!targetHabit) return;
+
+    const willComplete = !targetHabit.is_completed_today;
+    const streakDiff = willComplete ? 1 : -1;
+    const newStreak = Math.max(0, (targetHabit.current_streak || 0) + streakDiff);
+    const completedTodayDiff = willComplete ? 1 : -1;
+    const newCompletedToday = Math.max(
+      0,
+      (data.metrics?.habits_completed_today_count || 0) + completedTodayDiff
+    );
+
+    // Instant UI update
+    setData((prev: any) => ({
+      ...prev,
+      habits: prev.habits?.map((h: any) =>
+        h.id === habitId
+          ? { ...h, is_completed_today: willComplete, current_streak: newStreak }
+          : h
+      ),
+      metrics: {
+        ...prev.metrics,
+        habits_completed_today_count: newCompletedToday,
+      },
+    }));
+
+    // Background sync
     try {
       const res = await api.post(`/habits/${habitId}/toggle`);
-      if (res.data?.success) {
-        fetchDashboard();
+      if (!res.data?.success) {
+        setData(previousData);
+      } else {
+        fetchDashboard(true);
       }
     } catch (err) {
       console.error(err);
+      setData(previousData);
     }
   };
 
-  if (loading || !data) {
-    return (
-      <div className="flex h-96 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-      </div>
-    );
+  if (loading && !data) {
+    return <DashboardSkeleton />;
+  }
+
+  if (!data) {
+    return <DashboardSkeleton />;
   }
 
   const {
@@ -102,7 +174,7 @@ export default function DashboardPage() {
     <div className="space-y-8">
       {/* Top Banner / Workspace Summary */}
       <FadeIn direction="down">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
           <div>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">
               Welcome back to your workspace!
@@ -125,17 +197,17 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            <Link href="/tasks">
+            <Link href="/tasks" prefetch={true}>
               <Button size="sm" leftIcon={<Plus className="h-3.5 w-3.5" />}>
                 New Task
               </Button>
             </Link>
-            <Link href="/examinations">
+            <Link href="/examinations" prefetch={true}>
               <Button size="sm" variant="secondary" leftIcon={<GraduationCap className="h-3.5 w-3.5" />}>
                 Exams
               </Button>
             </Link>
-            <Link href="/notifications">
+            <Link href="/notifications" prefetch={true}>
               <Button
                 size="sm"
                 variant="outline"
@@ -154,113 +226,133 @@ export default function DashboardPage() {
         </div>
       </FadeIn>
 
-      {/* 5 Core Metrics Cards with Staggered Entrance & Animated Numbers */}
+      {/* 5 Core Metrics Cards: Clickable to Features with Staggered Entrance & Animated Numbers */}
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Metric 1: Tasks Completion */}
         <StaggerItem>
-          <Card interactive>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Task Completion</span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                  <CheckSquare className="h-4 w-4" />
+          <Link href="/tasks" prefetch={true} className="block group focus:outline-hidden">
+            <Card interactive className="transition-all group-hover:border-sky-300">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-800 transition-colors">
+                    Task Completion
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
+                    <CheckSquare className="h-4 w-4" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-slate-900">
-                  <AnimatedNumber value={metrics.completion_rate_percentage || 0} />%
-                </span>
-                <span className="text-[11px] font-semibold text-slate-400">
-                  (<AnimatedNumber value={metrics.tasks_completed_count || 0} />/
-                  <AnimatedNumber value={metrics.tasks_total_count || 0} />)
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    <AnimatedNumber value={metrics.completion_rate_percentage || 0} />%
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    (<AnimatedNumber value={metrics.tasks_completed_count || 0} />/
+                    <AnimatedNumber value={metrics.tasks_total_count || 0} />)
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </StaggerItem>
 
         {/* Metric 2: Active Projects */}
         <StaggerItem>
-          <Card interactive>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Active Projects</span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
-                  <FolderKanban className="h-4 w-4" />
+          <Link href="/projects" prefetch={true} className="block group focus:outline-hidden">
+            <Card interactive className="transition-all group-hover:border-sky-300">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-800 transition-colors">
+                    Active Projects
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-600 group-hover:bg-sky-100 transition-colors">
+                    <FolderKanban className="h-4 w-4" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-slate-900">
-                  <AnimatedNumber value={metrics.active_projects_count || 0} />
-                </span>
-                <span className="text-[11px] text-sky-600 font-medium">
-                  <AnimatedNumber value={metrics.average_project_progress || 0} />% avg
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    <AnimatedNumber value={metrics.active_projects_count || 0} />
+                  </span>
+                  <span className="text-[11px] text-sky-600 font-medium">
+                    <AnimatedNumber value={metrics.average_project_progress || 0} />% avg
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </StaggerItem>
 
         {/* Metric 3: Active Habit Streaks */}
         <StaggerItem>
-          <Card interactive>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Habit Streaks</span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                  <Flame className="h-4 w-4" />
+          <Link href="/habits" prefetch={true} className="block group focus:outline-hidden">
+            <Card interactive className="transition-all group-hover:border-amber-300">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-800 transition-colors">
+                    Habit Streaks
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-100 transition-colors">
+                    <Flame className="h-4 w-4" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-slate-900">
-                  <AnimatedNumber value={metrics.habits_active_streak_sum || 0} />d
-                </span>
-                <span className="text-[11px] text-amber-600 font-medium">
-                  <AnimatedNumber value={metrics.habits_completed_today_count || 0} /> today
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    <AnimatedNumber value={metrics.habits_active_streak_sum || 0} />d
+                  </span>
+                  <span className="text-[11px] text-amber-600 font-medium">
+                    <AnimatedNumber value={metrics.habits_completed_today_count || 0} /> today
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </StaggerItem>
 
         {/* Metric 4: Scheduled Exams */}
         <StaggerItem>
-          <Card interactive>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Upcoming Exams</span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
-                  <GraduationCap className="h-4 w-4" />
+          <Link href="/examinations" prefetch={true} className="block group focus:outline-hidden">
+            <Card interactive className="transition-all group-hover:border-rose-300">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-800 transition-colors">
+                    Upcoming Exams
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-100 transition-colors">
+                    <GraduationCap className="h-4 w-4" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-slate-900">
-                  <AnimatedNumber value={metrics.upcoming_examinations_count || 0} />
-                </span>
-                <span className="text-[11px] text-rose-600 font-semibold">Active Window</span>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    <AnimatedNumber value={metrics.upcoming_examinations_count || 0} />
+                  </span>
+                  <span className="text-[11px] text-rose-600 font-semibold">Active Window</span>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </StaggerItem>
 
         {/* Metric 5: Focus Study Hours */}
         <StaggerItem>
-          <Card interactive>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">Study Sessions</span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
-                  <BookOpen className="h-4 w-4" />
+          <Link href="/learning" prefetch={true} className="block group focus:outline-hidden">
+            <Card interactive className="transition-all group-hover:border-purple-300">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-800 transition-colors">
+                    Study Sessions
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-100 transition-colors">
+                    <BookOpen className="h-4 w-4" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-slate-900">
-                  <AnimatedNumber value={metrics.total_study_hours || 0} />h
-                </span>
-                <span className="text-[11px] text-purple-600 font-semibold">Deep focus</span>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    <AnimatedNumber value={metrics.total_study_hours || 0} />h
+                  </span>
+                  <span className="text-[11px] text-purple-600 font-semibold">Deep focus</span>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </StaggerItem>
       </StaggerContainer>
 
@@ -277,6 +369,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/tasks"
+                prefetch={true}
                 className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1"
               >
                 View all tasks <ArrowUpRight className="h-3 w-3" />
@@ -347,6 +440,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/projects"
+                prefetch={true}
                 className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1"
               >
                 All projects <ArrowUpRight className="h-3 w-3" />
@@ -356,40 +450,48 @@ export default function DashboardPage() {
             {active_projects.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {active_projects.map((proj: any) => (
-                  <motion.div
+                  <Link
                     key={proj.id}
-                    whileHover={{ y: -2 }}
-                    transition={SPRING_TRANSITIONS.tight}
-                    className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3 hover:shadow-md transition"
+                    href="/projects"
+                    prefetch={true}
+                    className="block group focus:outline-hidden"
                   >
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-slate-900 truncate">{proj.title}</h4>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1">
-                        <span>Progress</span>
-                        <span className="text-sky-600">{proj.progress}%</span>
+                    <motion.div
+                      whileHover={{ y: -2 }}
+                      transition={SPRING_TRANSITIONS.tight}
+                      className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3 hover:shadow-md hover:border-sky-200 transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-slate-900 group-hover:text-sky-700 transition-colors truncate">
+                          {proj.title}
+                        </h4>
                       </div>
-                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${proj.progress}%` }}
-                          transition={SPRING_TRANSITIONS.snappy}
-                          className="h-full bg-sky-500 rounded-full"
-                        />
-                      </div>
-                    </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span>
-                        {proj.completed_tasks_count || 0}/{proj.tasks_count || 0} Tasks
-                      </span>
-                      <span>
-                        {proj.deadline ? new Date(proj.deadline).toLocaleDateString() : 'No date'}
-                      </span>
-                    </div>
-                  </motion.div>
+                      <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1">
+                          <span>Progress</span>
+                          <span className="text-sky-600">{proj.progress}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${proj.progress}%` }}
+                            transition={SPRING_TRANSITIONS.snappy}
+                            className="h-full bg-sky-500 rounded-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>
+                          {proj.completed_tasks_count || 0}/{proj.tasks_count || 0} Tasks
+                        </span>
+                        <span>
+                          {proj.deadline ? new Date(proj.deadline).toLocaleDateString() : 'No date'}
+                        </span>
+                      </div>
+                    </motion.div>
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -447,6 +549,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/habits"
+                prefetch={true}
                 className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1"
               >
                 All <ArrowUpRight className="h-3 w-3" />
@@ -474,7 +577,7 @@ export default function DashboardPage() {
                       size="sm"
                       variant={habit.is_completed_today ? 'secondary' : 'primary'}
                       onClick={() => handleToggleHabit(habit.id)}
-                      className={`h-7 text-xs px-2.5 ${
+                      className={`h-7 text-xs px-2.5 cursor-pointer ${
                         habit.is_completed_today
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100'
                           : ''
@@ -501,6 +604,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/goals"
+                prefetch={true}
                 className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1"
               >
                 All <ArrowUpRight className="h-3 w-3" />
@@ -542,6 +646,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/examinations"
+                prefetch={true}
                 className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1"
               >
                 Portal <ArrowUpRight className="h-3 w-3" />
@@ -563,7 +668,7 @@ export default function DashboardPage() {
                         {exam.duration_minutes} mins • Passing: {exam.passing_score}%
                       </p>
                     </div>
-                    <Link href={`/examinations`}>
+                    <Link href={`/examinations`} prefetch={true}>
                       <Button size="sm" variant="danger" className="h-7 text-xs px-2.5">
                         Prepare
                       </Button>

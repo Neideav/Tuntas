@@ -26,7 +26,7 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
   // The bottom dome baseline (y=470) NEVER moves, tilts, or skews!
   // All cursor tracking is accomplished through 3D face parallax inside the fixed dome.
   const facePointerX = useTransform(springX, (val) =>
-    isInteractive ? val * 6.5 : 0
+    isInteractive ? val * 8.5 : 0
   );
   const facePointerY = useTransform(springY, (val) =>
     isInteractive ? val * 4.0 : 0
@@ -192,6 +192,26 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
       ? successOruPath
       : normalOruPath;
 
+  // Dynamic continuous bezier morphing for cursor tracking
+  // Anchored strictly at the floor baseline (y=470), while the entire dome flexes organically
+  const dynamicBodyPath = useTransform(springX, (val) => {
+    if (!isInteractive) return currentBodyPath;
+    const sway = val * 18;
+    if (isEmailFocus) {
+      return `M 30 470 C 30 440 ${110 + sway * 0.4} 342 ${185 + sway * 0.4} 342 C ${255 + sway * 0.4} 342 300 440 300 470 Z`;
+    }
+    if (isPasswordFocus) {
+      return `M 30 470 C 30 440 ${85 + sway * 0.35} 360 ${150 + sway * 0.35} 360 C ${225 + sway * 0.35} 360 300 440 300 470 Z`;
+    }
+    if (isError) {
+      return `M 30 470 C 30 440 ${90 + sway * 0.4} 355 ${155 + sway * 0.4} 355 C ${230 + sway * 0.4} 355 300 440 300 470 Z`;
+    }
+    if (isSuccess) {
+      return `M 30 470 C 30 435 ${90 + sway * 0.4} 328 ${165 + sway * 0.4} 328 C ${240 + sway * 0.4} 328 300 435 300 470 Z`;
+    }
+    return `M 30 470 C 30 440 ${90 + sway * 0.88} 340 ${165 + sway} 340 C ${240 + sway * 0.88} 340 300 440 300 470 Z`;
+  });
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -203,9 +223,7 @@ export const OruCharacter: React.FC<CharacterCommonProps> = ({
     >
       {/* Main Semicircle Dome Body (Morphing crest, baseline on y=470 is 100% static & horizontal) */}
       <motion.path
-        d={currentBodyPath}
-        animate={{ d: currentBodyPath }}
-        transition={smoothStateTransition}
+        d={dynamicBodyPath}
         fill="#FF852E"
         className="transition-colors duration-300"
       />

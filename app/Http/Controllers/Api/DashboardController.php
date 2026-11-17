@@ -161,21 +161,24 @@ class DashboardController extends Controller
             ->where('is_read', false)
             ->count();
 
-        // 8. Weekly Productivity Trend (Last 7 Days)
+        // 8. Weekly Productivity Trend (Last 7 Days) — Single consolidated query
+        $sevenDaysAgo = $now->copy()->subDays(6)->startOfDay();
+        $recentCompletedTasks = Task::where('user_id', $userId)
+            ->where('status', 'completed')
+            ->where('completed_at', '>=', $sevenDaysAgo)
+            ->get(['completed_at']);
+
         $weeklyProductivity = [];
         for ($i = 6; $i >= 0; $i--) {
             $day = $now->copy()->subDays($i);
-            $dayStart = $day->copy()->startOfDay();
-            $dayEnd = $day->copy()->endOfDay();
-
-            $completedCount = Task::where('user_id', $userId)
-                ->where('status', 'completed')
-                ->whereBetween('completed_at', [$dayStart, $dayEnd])
-                ->count();
+            $dateStr = $day->format('Y-m-d');
+            $completedCount = $recentCompletedTasks->filter(function ($t) use ($dateStr) {
+                return $t->completed_at && Carbon::parse($t->completed_at)->format('Y-m-d') === $dateStr;
+            })->count();
 
             $weeklyProductivity[] = [
                 'day' => $day->format('D'),
-                'date' => $day->format('Y-m-d'),
+                'date' => $dateStr,
                 'completed' => $completedCount,
             ];
         }

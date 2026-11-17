@@ -27,8 +27,9 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
   // The bottom part of Tupi (y = 280 to y = 470) NEVER moves, tilts, or skews!
   // All body deformation (like bending in emailFocus from frame_009) is achieved
   // via continuous bezier path morphing above y = 280, keeping the bottom 190px 100% static!
+  // Facial group follows Tupi's head sway at y=118 so features stay naturally aligned on the tower
   const headPointerX = useTransform(springX, (val) =>
-    isInteractive ? val * 5.0 : 0
+    isInteractive ? val * 19.5 : 0
   );
   const headPointerY = useTransform(springY, (val) =>
     isInteractive ? val * 3.5 : 0
@@ -37,9 +38,21 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
     isInteractive ? val * 1.5 : 0
   );
 
-  // Pupils strictly bounded within sclera
-  const pupilPointerX = useTransform(springX, (val) => (isInteractive ? val * 2.8 : 0));
-  const pupilPointerY = useTransform(springY, (val) => (isInteractive ? val * 2.2 : 0));
+  // White eyeball (sclera) also actively tracks the cursor!
+  const scleraPointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 2.2 : 0
+  );
+  const scleraPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 1.8 : 0
+  );
+
+  // Black pupils track cursor further inside the white sclera
+  const pupilPointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 3.8 : 0
+  );
+  const pupilPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 2.8 : 0
+  );
 
   // Deterministic WeStud-matched keyframes for all three lifecycle stages
   const bodyVariants = {
@@ -190,6 +203,32 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
       ? errorBodyPath
       : normalBodyPath;
 
+  // Dynamic continuous bezier morphing for cursor tracking
+  // Anchored strictly at the floor baseline (y=470), while the entire torso & head flexes organically
+  const dynamicTupiPath = useTransform(springX, (val) => {
+    if (!isInteractive) return currentBodyPath;
+    const sway = val * 22;
+    if (isEmailFocus) {
+      const topL = 205 + sway * 0.35;
+      const topR = 335 + sway * 0.35;
+      return `M ${topL} 95 C ${topL + 43} 106 ${topL + 87} 118 ${topR} 130 C ${335 + sway * 0.28} 190 ${320 + sway * 0.20} 290 ${310 + sway * 0.10} 370 C 307 420 305 450 305 470 L 160 470 C 160 450 162 420 ${165 + sway * 0.10} 370 C ${172 + sway * 0.20} 290 ${185 + sway * 0.28} 190 ${topL} 95 Z`;
+    }
+    if (isPasswordFocus) {
+      const topL = 140 + sway * 0.35;
+      const topR = 275 + sway * 0.35;
+      return `M ${topL} 85 C ${topL + 45} 80 ${topL + 90} 80 ${topR} 85 C ${275 + sway * 0.25} 170 ${285 + sway * 0.18} 270 ${295 + sway * 0.10} 370 C 302 420 305 450 305 470 L 160 470 C 160 450 158 420 ${155 + sway * 0.10} 370 C ${150 + sway * 0.18} 270 ${145 + sway * 0.25} 170 ${topL} 85 Z`;
+    }
+    if (isError) {
+      const topL = 175 + sway * 0.35;
+      const topR = 310 + sway * 0.35;
+      return `M ${topL} 105 C ${topL + 45} 115 ${topL + 90} 125 ${topR} 135 C ${310 + sway * 0.25} 185 ${308 + sway * 0.18} 275 ${306 + sway * 0.10} 370 C 305 420 305 450 305 470 L 160 470 C 160 450 160 420 ${162 + sway * 0.10} 370 C ${165 + sway * 0.18} 275 ${168 + sway * 0.25} 185 ${topL} 105 Z`;
+    }
+    // Full body organic flex: pinned strictly at baseline y=470 with vertical tangents at y=440..470
+    const topL = 160 + sway;
+    const topR = 305 + sway;
+    return `M ${topL} 80 C ${topL + 48} 80 ${topL + 96} 80 ${topR} 80 C ${topR} 150 ${305 + sway * 0.70} 220 ${305 + sway * 0.42} 290 C ${305 + sway * 0.16} 365 305 435 305 470 L 160 470 C 160 435 ${160 + sway * 0.16} 365 ${160 + sway * 0.42} 290 C ${160 + sway * 0.70} 220 ${topL} 150 ${topL} 80 Z`;
+  });
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -201,9 +240,7 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
     >
       {/* Main Purple Body (Morphing upper arch, bottom 190px is 100% static & vertical) */}
       <motion.path
-        d={currentBodyPath}
-        animate={{ d: currentBodyPath }}
-        transition={smoothStateTransition}
+        d={dynamicTupiPath}
         fill="#6528F5"
       />
 
@@ -284,7 +321,30 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
                   strokeLinecap="round"
                 />
               ) : (
-                <circle cx="224" cy="118" r="4.5" fill="#FFFFFF" />
+                <motion.circle
+                  cx="224"
+                  cy="118"
+                  r="4.5"
+                  fill="#FFFFFF"
+                  style={
+                    isPasswordFocus || isEmailFocus || isError || !isInteractive
+                      ? undefined
+                      : {
+                          x: scleraPointerX,
+                          y: scleraPointerY,
+                        }
+                  }
+                  animate={
+                    isError
+                      ? { x: -0.8, y: 1.0 }
+                      : isPasswordFocus
+                      ? { x: -1.2, y: -1.2 }
+                      : isEmailFocus
+                      ? { x: 1.5, y: 0.3 }
+                      : { x: 0, y: 0 }
+                  }
+                  transition={{ duration: 0.25 }}
+                />
               )}
 
               {!isPasswordVisible && (
@@ -328,7 +388,30 @@ export const TupiCharacter: React.FC<CharacterCommonProps> = ({
                   strokeLinecap="round"
                 />
               ) : (
-                <circle cx="264" cy="118" r="4.5" fill="#FFFFFF" />
+                <motion.circle
+                  cx="264"
+                  cy="118"
+                  r="4.5"
+                  fill="#FFFFFF"
+                  style={
+                    isPasswordFocus || isEmailFocus || isError || !isInteractive
+                      ? undefined
+                      : {
+                          x: scleraPointerX,
+                          y: scleraPointerY,
+                        }
+                  }
+                  animate={
+                    isError
+                      ? { x: -0.8, y: 1.0 }
+                      : isPasswordFocus
+                      ? { x: -1.2, y: -1.2 }
+                      : isEmailFocus
+                      ? { x: 1.5, y: 0.3 }
+                      : { x: 0, y: 0 }
+                  }
+                  transition={{ duration: 0.25 }}
+                />
               )}
 
               {!isPasswordVisible && (

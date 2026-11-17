@@ -16,12 +16,13 @@ import {
   AlertCircle,
   TrendingUp,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getCachedData } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { HabitsSkeleton } from '@/components/ui/Skeleton';
 
 interface Habit {
   id: number;
@@ -36,8 +37,8 @@ interface Habit {
 }
 
 export default function HabitsPage() {
-  const [habits, setHabits] = useState<Habit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [habits, setHabits] = useState<Habit[]>(() => getCachedData<Habit[]>('/habits') || []);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/habits'));
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isFreezeModalOpen, setIsFreezeModalOpen] = useState<Habit | null>(null);
   const [freezeDate, setFreezeDate] = useState('');
@@ -62,9 +63,11 @@ export default function HabitsPage() {
   const [freezeTokens, setFreezeTokens] = useState(2);
   const [saving, setSaving] = useState(false);
 
-  const fetchHabits = async () => {
+  const fetchHabits = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && habits.length === 0) {
+        setLoading(true);
+      }
       const res = await api.get('/habits');
       if (res.data?.success) {
         setHabits(res.data.data || []);
@@ -77,7 +80,8 @@ export default function HabitsPage() {
   };
 
   useEffect(() => {
-    fetchHabits();
+    const hasCache = !!getCachedData('/habits');
+    fetchHabits(hasCache);
   }, []);
 
   const handleToggle = async (habitId: number) => {
@@ -223,10 +227,8 @@ export default function HabitsPage() {
       </div>
 
       {/* Habits Grid */}
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-        </div>
+      {loading && habits.length === 0 ? (
+        <HabitsSkeleton />
       ) : habits.length === 0 ? (
         <EmptyState
           icon={Flame}

@@ -25,19 +25,32 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
   // STRICT GROUND ANCHOR PRESERVATION:
   // Kuro's base rectangle sits 100% motionless and vertical at y=470!
   // Pointer tracking & peeking is performed by the upper eyes and pupils.
+  // Eye group moves with Kuro's head sway at y=235 so the eyes stay aligned on the pillar
   const eyesPointerX = useTransform(springX, (val) =>
-    isInteractive ? val * 6.5 : 0
+    isInteractive ? val * 15.0 : 0
   );
   const eyesPointerY = useTransform(springY, (val) =>
-    isInteractive ? val * 4.0 : 0
+    isInteractive ? val * 3.5 : 0
   );
   const eyesPointerRotate = useTransform(springX, (val) =>
     isInteractive ? val * 1.5 : 0
   );
 
-  // Pupils strictly bounded within sclera
-  const pupilPointerX = useTransform(springX, (val) => (isInteractive ? val * 3.2 : 0));
-  const pupilPointerY = useTransform(springY, (val) => (isInteractive ? val * 2.8 : 0));
+  // White eyeball (sclera) also actively tracks the cursor!
+  const scleraPointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 3.2 : 0
+  );
+  const scleraPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 2.2 : 0
+  );
+
+  // Black pupils track cursor further inside the white sclera
+  const pupilPointerX = useTransform(springX, (val) =>
+    isInteractive ? val * 5.2 : 0
+  );
+  const pupilPointerY = useTransform(springY, (val) =>
+    isInteractive ? val * 3.8 : 0
+  );
 
   // Deterministic WeStud-matched keyframes for all three lifecycle stages
   const bodyVariants = {
@@ -177,6 +190,27 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
       ? passwordKuroPath
       : normalKuroPath;
 
+  // Dynamic continuous bezier morphing for cursor tracking
+  // Anchored strictly at the floor baseline (y=470), while the entire pillar flexes organically
+  const dynamicKuroPath = useTransform(springX, (val) => {
+    if (!isInteractive) return currentKuroPath;
+    const sway = val * 18;
+    if (isEmailFocus) {
+      const topL = 275 + sway * 0.35;
+      const topR = 370 + sway * 0.35;
+      return `M ${topL} 198 C ${topL + 31} 198 ${topL + 63} 198 ${topR} 198 C ${370 + sway * 0.28} 250 ${362 + sway * 0.18} 330 ${357 + sway * 0.10} 390 C 355 425 355 450 355 470 L 260 470 C 260 450 260 425 ${262 + sway * 0.10} 390 C ${266 + sway * 0.18} 330 ${270 + sway * 0.28} 250 ${topL} 198 Z`;
+    }
+    if (isPasswordFocus) {
+      const topL = 252 + sway * 0.35;
+      const topR = 347 + sway * 0.35;
+      return `M ${topL} 230 C ${topL + 31} 230 ${topL + 63} 230 ${topR} 230 C ${350 + sway * 0.25} 275 ${352 + sway * 0.15} 345 ${354 + sway * 0.08} 400 C 355 430 355 450 355 470 L 260 470 C 260 450 260 430 ${258 + sway * 0.08} 400 C ${256 + sway * 0.15} 345 ${254 + sway * 0.25} 275 ${topL} 230 Z`;
+    }
+    // Full body organic flex: pinned strictly at baseline y=470 with vertical tangents at y=440..470
+    const topL = 260 + sway;
+    const topR = 355 + sway;
+    return `M ${topL} 195 C ${topL + 31} 195 ${topL + 63} 195 ${topR} 195 C ${topR} 240 ${355 + sway * 0.70} 290 ${355 + sway * 0.42} 345 C ${355 + sway * 0.18} 400 355 440 355 470 L 260 470 C 260 440 ${260 + sway * 0.18} 400 ${260 + sway * 0.42} 345 C ${260 + sway * 0.70} 290 ${topL} 240 ${topL} 195 Z`;
+  });
+
   return (
     <motion.g
       variants={bodyVariants}
@@ -188,9 +222,7 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
     >
       {/* Main Black Rectangular Body (Morphing upper pillar, baseline flat on y=470 strictly motionless) */}
       <motion.path
-        d={currentKuroPath}
-        animate={{ d: currentKuroPath }}
-        transition={smoothStateTransition}
+        d={dynamicKuroPath}
         fill="#19191D"
         className="transition-colors duration-300"
       />
@@ -228,7 +260,28 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
                 strokeLinecap="round"
               />
             ) : (
-              <circle cx="320" cy="235" r="7" fill="#FFFFFF" />
+              <motion.circle
+                cx="320"
+                cy="235"
+                r="7"
+                fill="#FFFFFF"
+                style={
+                  lifecycle === 'intro' || isError || isEmailFocus || !isInteractive
+                    ? undefined
+                    : {
+                        x: scleraPointerX,
+                        y: scleraPointerY,
+                      }
+                }
+                animate={
+                  isError
+                    ? { x: -1.5, y: -1.5 }
+                    : isEmailFocus
+                    ? { x: 2.2, y: 0.2 }
+                    : { x: 0, y: 0 }
+                }
+                transition={{ duration: 0.25 }}
+              />
             )}
 
             {!isPasswordFocus && (
@@ -276,7 +329,28 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
                 strokeLinecap="round"
               />
             ) : (
-              <circle cx="344" cy="235" r="7" fill="#FFFFFF" />
+              <motion.circle
+                cx="344"
+                cy="235"
+                r="7"
+                fill="#FFFFFF"
+                style={
+                  lifecycle === 'intro' || isError || isEmailFocus || !isInteractive
+                    ? undefined
+                    : {
+                        x: scleraPointerX,
+                        y: scleraPointerY,
+                      }
+                }
+                animate={
+                  isError
+                    ? { x: -1.5, y: -1.5 }
+                    : isEmailFocus
+                    ? { x: 2.2, y: 0.2 }
+                    : { x: 0, y: 0 }
+                }
+                transition={{ duration: 0.25 }}
+              />
             )}
 
             {!isPasswordFocus && (

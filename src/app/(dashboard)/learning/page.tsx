@@ -19,7 +19,7 @@ import {
   Award,
   Sparkles,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getCachedData } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Tabs } from '@/components/ui/Tabs';
 import { PomodoroTimer } from '@/components/learning/PomodoroTimer';
+import { CoursesSkeleton } from '@/components/ui/Skeleton';
 
 interface Lesson {
   id: number;
@@ -90,10 +91,10 @@ interface AnalyticsData {
 
 export default function LearningPage() {
   const [activeTab, setActiveTab] = useState<'courses' | 'timer' | 'sessions' | 'analytics'>('courses');
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [sessions, setSessions] = useState<LearningSession[]>([]);
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [courses, setCourses] = useState<Course[]>(() => getCachedData<Course[]>('/courses') || []);
+  const [sessions, setSessions] = useState<LearningSession[]>(() => getCachedData<LearningSession[]>('/learning-sessions') || []);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(() => getCachedData<AnalyticsData>('/learning-analytics'));
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/courses'));
 
   // Expanded courses map
   const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
@@ -129,9 +130,11 @@ export default function LearningPage() {
   const [sessionCourseId, setSessionCourseId] = useState<number | undefined>();
   const [savingSession, setSavingSession] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && courses.length === 0) {
+        setLoading(true);
+      }
       const [coursesRes, sessionsRes, analyticsRes] = await Promise.all([
         api.get('/courses'),
         api.get('/learning-sessions'),
@@ -160,7 +163,8 @@ export default function LearningPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    const hasCache = !!getCachedData('/courses');
+    fetchData(hasCache);
   }, []);
 
   const handleToggleLesson = async (lessonId: number) => {
@@ -342,10 +346,8 @@ export default function LearningPage() {
         onChange={(id) => setActiveTab(id as any)}
       />
 
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-        </div>
+      {loading && courses.length === 0 ? (
+        <CoursesSkeleton />
       ) : activeTab === 'courses' ? (
         /* COURSES TAB */
         courses.length === 0 ? (

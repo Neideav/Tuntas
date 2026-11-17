@@ -13,12 +13,13 @@ import {
   CheckCircle2,
   Search,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getCachedData } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ProjectsSkeleton } from '@/components/ui/Skeleton';
 
 interface Project {
   id: number;
@@ -33,8 +34,8 @@ interface Project {
 }
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<Project[]>(() => getCachedData<Project[]>('/projects') || []);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedData('/projects'));
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -51,9 +52,11 @@ export default function ProjectsPage() {
   const [deadline, setDeadline] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent && projects.length === 0) {
+        setLoading(true);
+      }
       const res = await api.get('/projects');
       if (res.data?.success) {
         setProjects(res.data.data || []);
@@ -66,7 +69,8 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
-    fetchProjects();
+    const hasCache = !!getCachedData('/projects');
+    fetchProjects(hasCache);
   }, []);
 
   const openCreateModal = () => {
@@ -189,10 +193,8 @@ export default function ProjectsPage() {
       </div>
 
       {/* Projects Grid */}
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-        </div>
+      {loading && projects.length === 0 ? (
+        <ProjectsSkeleton />
       ) : filteredProjects.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
