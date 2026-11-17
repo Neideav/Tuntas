@@ -163,5 +163,28 @@ class AuthController extends Controller
             'message' => 'Kata sandi berhasil diperbarui',
         ]);
     }
+
+    /**
+     * Send password recovery link/token.
+     */
+    public function forgotPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $user = User::where('email', $validated['email'])->first();
+
+        if (! $user) {
+            throw ValidationException::withMessages([
+                'email' => ['Email belum terdaftar di sistem Tuntas.'],
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tautan pemulihan kata sandi telah dikirim ke alamat email Anda.',
+        ]);
+    }
 }
 

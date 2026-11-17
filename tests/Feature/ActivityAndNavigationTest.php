@@ -67,6 +67,23 @@ class ActivityAndNavigationTest extends TestCase
             ->assertJsonPath('errors.password.0', 'Kata sandi yang Anda masukkan salah. Silakan coba lagi.');
     }
 
+    public function test_forgot_password_endpoint(): void
+    {
+        // 1. Unregistered email
+        $responseFail = $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => 'unknown@tuntas.test',
+        ]);
+        $responseFail->assertStatus(422)
+            ->assertJsonValidationErrors(['email']);
+
+        // 2. Registered email
+        $responseSuccess = $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => $this->user->email,
+        ]);
+        $responseSuccess->assertStatus(200)
+            ->assertJsonPath('success', true);
+    }
+
     public function test_activity_endpoint_returns_user_audit_logs_with_proper_isolation(): void
     {
         // 1. Create audit logs for target user
