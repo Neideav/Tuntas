@@ -12,182 +12,241 @@ import {
 
 export const YumiCharacter: React.FC<CharacterCommonProps> = ({
   state,
+  lifecycle,
   pointer,
-  isIntroComplete = true,
   shouldReduceMotion = false,
 }) => {
   // Precision spring tuned to Yumi's curved pill shape
   const springX = useSpring(pointer.x, yumiSpringConfig);
   const springY = useSpring(pointer.y, yumiSpringConfig);
 
-  // Dynamic deformation derived from pointer (matching frame_008)
+  const isInteractive = lifecycle === 'interactive' && !shouldReduceMotion;
+
+  // GROUND ANCHOR PRESERVATION:
+  // Using skewX and scaleY anchored at (385px 470px)
+  // keeps the bottom edge L 440 470 L 330 470 perfectly horizontal on y = 470!
   const bodyPointerSkewX = useTransform(springX, (val) =>
-    shouldReduceMotion ? 0 : val * -6.5
+    isInteractive ? val * -6.5 : 0
   );
   const bodyPointerX = useTransform(springX, (val) =>
-    shouldReduceMotion ? 0 : val * 4.5
+    isInteractive ? val * 4.5 : 0
   );
-  const bodyPointerRotate = useTransform(springX, (val) =>
-    shouldReduceMotion ? 0 : val * 2.2
+  const bodyPointerScaleY = useTransform(springY, (val) =>
+    isInteractive ? 1 - val * 0.02 : 1
+  );
+
+  // Upper head tilt around (385px 330px) without tilting the base
+  const headPointerRotate = useTransform(springX, (val) =>
+    isInteractive ? val * 2.2 : 0
   );
   const armPointerRotate = useTransform(springY, (val) =>
-    shouldReduceMotion ? 0 : val * 6.0
+    isInteractive ? val * 6.0 : 0
   );
 
   // Eye movement bounded inside face
-  const eyePointerX = useTransform(springX, (val) => val * 3.2);
-  const eyePointerY = useTransform(springY, (val) => val * 2.5);
+  const eyePointerX = useTransform(springX, (val) => (isInteractive ? val * 3.2 : 0));
+  const eyePointerY = useTransform(springY, (val) => (isInteractive ? val * 2.5 : 0));
 
-  // Intro floor pop vs settled states
-  const bodyIntroVariants = {
-    intro: {
-      y: 90,
-      scaleY: 0.45,
-      scaleX: 1.25,
-      transition: {
-        ...introSpringConfig,
-        delay: 0.2,
-      },
-    },
-    idle: {
-      x: shouldReduceMotion ? 0 : [0, 2, 0, -2, 0],
+  // Deterministic WeStud-matched keyframes for all three lifecycle stages
+  const bodyVariants = {
+    // Stage 0: Pre-intro hidden state (0.0s - 1.8s)
+    hidden: {
+      x: 0,
       y: 0,
       rotate: 0,
       skewX: 0,
+      scaleY: 0.35,
+      scaleX: 1.05,
+      opacity: 0,
+    },
+    // Stage 1: Intro sequence (0.0s - 4.4s)
+    // 0s-1.8s: resting flat on baseline, hidden
+    // 2.5s: compact semicircle arch on baseline
+    // 3.5s: extruding upward into full arch
+    // 4.4s: settled into canonical stance on baseline y=470
+    intro: {
+      x: [0, 0, 0, 0, 0],
+      y: [0, 0, 0, 0, 0],
+      rotate: [0, 0, 0, 0, 0],
+      skewX: [0, 0, 0, 0, 0],
+      scaleY: [0.35, 0.35, 0.45, 0.96, 1.0],
+      scaleX: [1.05, 1.05, 1.05, 1.0, 1.0],
+      opacity: [0, 0, 1, 1, 1],
+      transition: {
+        duration: 4.4,
+        times: [0, 0.41, 0.57, 0.82, 1.0],
+        ease: 'easeInOut' as const,
+      },
+    },
+    // Stage 2: Settled (canonical proportional rest pose on baseline y=470)
+    settled: {
+      y: 0,
       scaleY: 1,
       scaleX: 1,
+      rotate: 0,
+      skewX: 0,
+      x: 0,
+      opacity: 1,
+      transition: { duration: 0.2, ease: 'easeOut' as const },
+    },
+    // Stage 3: Interactive states
+    idle: {
+      scaleY: shouldReduceMotion ? 1 : [1, 1.02, 1],
+      rotate: 0,
+      skewX: 0,
+      x: 0,
+      y: 0,
+      opacity: 1,
       transition: {
-        x: { duration: 4.5, repeat: Infinity, ease: 'easeInOut' as const, delay: 0.6 },
+        scaleY: { duration: 4.5, repeat: Infinity, ease: 'easeInOut' as const, delay: 0.6 },
         default: smoothStateTransition,
       },
     },
     pointerTracking: {
+      scaleY: 1,
+      rotate: 0,
       x: 0,
       y: 0,
-      rotate: 0,
-      scaleY: 1,
-      transition: { duration: 0.25, ease: 'easeOut' as const },
+      opacity: 1,
+      transition: { duration: 0.2, ease: 'easeOut' as const },
     },
     emailFocus: {
-      // Leans toward the form (matching frame_008)
       x: 6,
-      y: -2,
-      rotate: 1.5,
+      y: 0,
+      rotate: 0,
       skewX: -6.0,
+      scaleY: 1.02,
+      opacity: 1,
       transition: smoothStateTransition,
     },
     passwordFocus: {
-      // Sinks slightly while arm covers eye
-      y: 8,
       x: -3,
-      rotate: -1.5,
+      y: 0,
+      rotate: 0,
       skewX: 3,
+      scaleY: 0.96, // Squashes down with base fixed
+      opacity: 1,
       transition: smoothStateTransition,
     },
     passwordVisible: {
-      // Peeking up with curiosity (matching frame_015)
-      y: -6,
+      y: 0,
       x: 3,
       rotate: 0,
       skewX: -2,
+      scaleY: 1.01,
+      opacity: 1,
       transition: smoothStateTransition,
     },
     error: {
-      // Squashed and nervous tilt (matching frame_013)
       x: 4,
-      y: 12,
-      rotate: 4,
-      skewX: 4,
+      y: 0, // Remains grounded
       scaleY: 0.94,
+      rotate: 0,
+      skewX: 3,
+      opacity: 1,
       transition: { duration: 0.45, ease: 'easeOut' as const },
     },
     success: {
-      y: -20,
+      y: -22,
       x: 0,
       rotate: [0, -4, 4, 0],
       skewX: 0,
       scaleY: 1.04,
+      opacity: 1,
       transition: celebrationSpring,
     },
   };
 
-  const isPasswordFocus = state === 'passwordFocus';
-  const isPasswordVisible = state === 'passwordVisible';
-  const isError = state === 'error';
-  const isSuccess = state === 'success';
-  const isEmailFocus = state === 'emailFocus';
+  const activeAnimation =
+    lifecycle === 'intro'
+      ? 'intro'
+      : lifecycle === 'settled'
+      ? 'settled'
+      : state;
+
+  const isPasswordFocus = lifecycle === 'interactive' && state === 'passwordFocus';
+  const isPasswordVisible = lifecycle === 'interactive' && state === 'passwordVisible';
+  const isError = lifecycle === 'interactive' && state === 'error';
+  const isSuccess = lifecycle === 'interactive' && state === 'success';
+  const isEmailFocus = lifecycle === 'interactive' && state === 'emailFocus';
 
   return (
     <motion.g
-      variants={bodyIntroVariants}
-      initial={!isIntroComplete ? 'intro' : false}
-      animate={state}
+      variants={bodyVariants}
+      initial={shouldReduceMotion ? 'settled' : 'hidden'}
+      animate={activeAnimation}
       style={{
         transformOrigin: '385px 470px',
       }}
     >
-      {/* Sub-group for pointer-driven skew and tilt */}
+      {/* Sub-group for pointer-driven skew and scale anchored at fixed base y=470 */}
       <motion.g
         style={{
           skewX: bodyPointerSkewX,
-          rotate: bodyPointerRotate,
           x: bodyPointerX,
+          scaleY: bodyPointerScaleY,
           transformOrigin: '385px 470px',
         }}
       >
-        {/* Main Arch / Pill Body */}
+        {/* Main Arch / Pill Body (Baseline L 440 470 L 330 470 Z) */}
         <path
           d="M 330 325 A 55 55 0 0 1 440 325 L 440 470 L 330 470 Z"
           fill="#F1D20A"
           className="transition-colors duration-300"
         />
 
-        {/* Eye: single friendly dot or squint */}
-        {isPasswordFocus ? (
-          // Squinting closed eye beneath the covering arm
-          <path
-            d="M 366 318 Q 372 314 378 318"
-            stroke="#19191D"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            fill="none"
-          />
-        ) : isSuccess ? (
-          // Happy arched eye
-          <path
-            d="M 366 319 Q 372 312 378 319"
-            stroke="#19191D"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            fill="none"
-          />
-        ) : isError ? (
-          // Nervous small worried dot
-          <circle cx="372" cy="318" r="3.5" fill="#19191D" />
-        ) : (
-          <motion.circle
-            cx="372"
-            cy="318"
-            r={isPasswordVisible ? 5.5 : 4.5}
-            fill="#19191D"
-            style={
-              isEmailFocus
-                ? undefined
-                : {
-                    x: eyePointerX,
-                    y: eyePointerY,
-                  }
-            }
-            animate={
-              isEmailFocus
-                ? { x: 3.0, y: 0.2 }
-                : undefined
-            }
-            transition={{ duration: 0.25 }}
-          />
-        )}
+        {/* ================= UPPER HEAD & EYE GROUP ================= */}
+        {/* Tilts around (385px 330px) without rotating the base */}
+        <motion.g
+          style={{
+            rotate: headPointerRotate,
+            transformOrigin: '385px 330px',
+          }}
+        >
+          {/* Eye */}
+          {isPasswordFocus ? (
+            <path
+              d="M 366 318 Q 372 314 378 318"
+              stroke="#19191D"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              fill="none"
+            />
+          ) : isSuccess ? (
+            <path
+              d="M 366 319 Q 372 312 378 319"
+              stroke="#19191D"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              fill="none"
+            />
+          ) : isError ? (
+            <circle cx="372" cy="318" r="3.5" fill="#19191D" />
+          ) : (
+            <motion.circle
+              cx="372"
+              cy="318"
+              r={isPasswordVisible ? 5.5 : 4.5}
+              fill="#19191D"
+              style={
+                isEmailFocus || !isInteractive
+                  ? undefined
+                  : {
+                      x: eyePointerX,
+                      y: eyePointerY,
+                    }
+              }
+              animate={
+                isEmailFocus
+                  ? { x: 3.0, y: 0.2 }
+                  : { x: 0, y: 0 }
+              }
+              transition={{ duration: 0.25 }}
+            />
+          )}
+        </motion.g>
 
-        {/* ================= ARM & MOUTH POSE (State-driven & Pointer reactive) ================= */}
+        {/* ================= ARM & MOUTH POSE ================= */}
         {isError ? (
           // Nervous wavy squiggly line from frame_013!
           <motion.path
@@ -233,7 +292,7 @@ export const YumiCharacter: React.FC<CharacterCommonProps> = ({
                 strokeLinecap="round"
               />
 
-              {/* Hand / End Mitten (Covers eye when rotated to -124deg) */}
+              {/* Hand Mitten */}
               <circle cx="455" cy="345" r="5" fill="#19191D" />
             </motion.g>
           </motion.g>

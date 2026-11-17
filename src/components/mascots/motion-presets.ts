@@ -2,7 +2,7 @@
 
 // TUPI (Purple Character): Elastic rectangular body, leaning skew & squash
 export const tupiSpringConfig = {
-  stiffness: 200,
+  stiffness: 220,
   damping: 24,
   mass: 0.85,
 };
@@ -10,7 +10,7 @@ export const tupiSpringConfig = {
 // KURO (Black Character): Peeking drop-in and agile peeking lag
 export const kuroSpringConfig = {
   stiffness: 300,
-  damping: 22,
+  damping: 24,
   mass: 0.5,
 };
 
@@ -28,19 +28,19 @@ export const oruSpringConfig = {
   mass: 0.6,
 };
 
-// Intro sequence drop & spring settle
+// Deterministic intro entrance spring: smooth, damped, never overshoots wildly
 export const introSpringConfig = {
   type: 'spring' as const,
-  stiffness: 170,
-  damping: 18,
+  stiffness: 200,
+  damping: 22,
   mass: 0.8,
 };
 
-// Celebration & state transition spring presets
+// Clean celebration spring
 export const celebrationSpring = {
   type: 'spring' as const,
   stiffness: 360,
-  damping: 16,
+  damping: 18,
 };
 
 export const snappySpring = {
@@ -50,6 +50,6 @@ export const snappySpring = {
 };
 
 export const smoothStateTransition = {
-  duration: 0.38,
+  duration: 0.35,
   ease: [0.22, 1, 0.36, 1] as const,
 };

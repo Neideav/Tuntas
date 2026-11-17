@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
-import { MascotState, NormalizedPointer } from './types';
+import { LifecycleStage, MascotState, NormalizedPointer } from './types';
 import TupiCharacter from './TupiCharacter';
 import KuroCharacter from './KuroCharacter';
 import YumiCharacter from './YumiCharacter';
@@ -21,10 +21,15 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldReduceMotion = Boolean(useReducedMotion());
-  const [isIntroComplete, setIsIntroComplete] = useState(false);
+
+  // Explicit, deterministic 3-stage lifecycle:
+  // INTRO -> SETTLED -> INTERACTIVE
+  const [lifecycle, setLifecycle] = useState<LifecycleStage>(() =>
+    shouldReduceMotion ? 'interactive' : 'intro'
+  );
 
   // High-performance Motion Values for pointer coordinates
-  // Direct DOM transform updates: 0 React re-renders on mousemove!
+  // Direct DOM updates: 0 React component re-renders on pointer movements!
   const pointerX = useMotionValue(0);
   const pointerY = useMotionValue(0);
   const distanceToForm = useMotionValue(0);
@@ -37,18 +42,27 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
     isNearForm,
   };
 
-  // Coordinated entrance animation on first page load
+  // Centralized Lifecycle Progression: INTRO (0s - 4.4s) -> SETTLED (4.4s - 4.7s) -> INTERACTIVE (4.7s+)
   useEffect(() => {
     if (shouldReduceMotion) {
-      setIsIntroComplete(true);
+      setLifecycle('interactive');
       return;
     }
 
-    const timer = setTimeout(() => {
-      setIsIntroComplete(true);
-    }, 750);
+    // Stage 1 -> Stage 2: Settle characters into authoritative canonical composition at 4.4s
+    const settleTimer = setTimeout(() => {
+      setLifecycle('settled');
+    }, 4400);
 
-    return () => clearTimeout(timer);
+    // Stage 2 -> Stage 3: Enable interactive cursor tracking & form reactions at 4.7s
+    const interactiveTimer = setTimeout(() => {
+      setLifecycle('interactive');
+    }, 4700);
+
+    return () => {
+      clearTimeout(settleTimer);
+      clearTimeout(interactiveTimer);
+    };
   }, [shouldReduceMotion]);
 
   // Pointer tracking with normalized boundaries and form proximity detection
@@ -85,7 +99,7 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
         pointerX.set(normX);
         pointerY.set(normY);
 
-        // Calculate proximity to authentication form (right side of canvas)
+        // Proximity detection for authentication form on the right
         if (normX > 0.2) {
           isNearForm.set(1);
           distanceToForm.set(normX);
@@ -127,8 +141,12 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
     };
   }, [pointerX, pointerY, isNearForm, distanceToForm, shouldReduceMotion]);
 
-  // If intro has not yet completed, state is 'intro', otherwise active form state
-  const activeState = !isIntroComplete && !shouldReduceMotion ? 'intro' : parentState;
+  // If user focuses input or triggers an action, unlock interactive stage immediately
+  useEffect(() => {
+    if (parentState !== 'idle') {
+      setLifecycle('interactive');
+    }
+  }, [parentState]);
 
   return (
     <div
@@ -136,13 +154,20 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
       onClick={onSceneClick}
       className={`relative w-full h-full flex items-end justify-center select-none overflow-hidden ${className}`}
     >
+      {/* 
+        Safe, unclipped ViewBox: (0 0 500 480) with preserveAspectRatio="xMidYMax meet"
+        - Characters span x=[40, 460] and y=[80, 470].
+        - Generous 40px left/right margins and 80px top margin guarantee ZERO clipping.
+        - Fixed ground baseline strictly sits at y=470.
+      */}
       <motion.svg
-        viewBox="0 0 540 470"
-        className="w-full h-auto max-h-[520px] drop-shadow-2xs"
+        viewBox="0 0 500 480"
+        preserveAspectRatio="xMidYMax meet"
+        className="w-full h-full object-contain object-bottom drop-shadow-2xs overflow-hidden"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         animate={
-          activeState === 'error' && !shouldReduceMotion
+          parentState === 'error' && !shouldReduceMotion
             ? { x: [-3, 3, -3, 3, -1, 1, 0] }
             : {}
         }
@@ -150,33 +175,33 @@ export const MascotScene: React.FC<MascotSceneProps> = ({
       >
         {/* ================= LAYER 1: TUPI (Purple Character - Background) ================= */}
         <TupiCharacter
-          state={activeState}
+          state={parentState}
+          lifecycle={lifecycle}
           pointer={pointer}
-          isIntroComplete={isIntroComplete}
           shouldReduceMotion={shouldReduceMotion}
         />
 
         {/* ================= LAYER 2: KURO (Black Character - Middle Peeker) ================= */}
         <KuroCharacter
-          state={activeState}
+          state={parentState}
+          lifecycle={lifecycle}
           pointer={pointer}
-          isIntroComplete={isIntroComplete}
           shouldReduceMotion={shouldReduceMotion}
         />
 
         {/* ================= LAYER 3: YUMI (Yellow Character - Middle-Right Arch & Arm) ================= */}
         <YumiCharacter
-          state={activeState}
+          state={parentState}
+          lifecycle={lifecycle}
           pointer={pointer}
-          isIntroComplete={isIntroComplete}
           shouldReduceMotion={shouldReduceMotion}
         />
 
         {/* ================= LAYER 4: ORU (Orange Character - Foreground Dome) ================= */}
         <OruCharacter
-          state={activeState}
+          state={parentState}
+          lifecycle={lifecycle}
           pointer={pointer}
-          isIntroComplete={isIntroComplete}
           shouldReduceMotion={shouldReduceMotion}
         />
       </motion.svg>

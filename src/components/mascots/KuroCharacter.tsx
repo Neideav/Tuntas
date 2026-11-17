@@ -12,128 +12,179 @@ import {
 
 export const KuroCharacter: React.FC<CharacterCommonProps> = ({
   state,
+  lifecycle,
   pointer,
-  isIntroComplete = true,
   shouldReduceMotion = false,
 }) => {
-  // Precision spring tuned to Kuro's quick agile peeking reflexes
+  // Precision spring tuned to Kuro's agile peeking reflexes
   const springX = useSpring(pointer.x, kuroSpringConfig);
   const springY = useSpring(pointer.y, kuroSpringConfig);
 
-  // Dynamic deformation derived from pointer (matching frame_008)
+  const isInteractive = lifecycle === 'interactive' && !shouldReduceMotion;
+
+  // GROUND ANCHOR PRESERVATION:
+  // Using skewX and horizontal slide anchored at (307px 470px)
+  // keeps the bottom edge perfectly horizontal on y = 470!
   const bodyPointerSkewX = useTransform(springX, (val) =>
-    shouldReduceMotion ? 0 : val * -7.5
+    isInteractive ? val * -7.5 : 0
   );
   const bodyPointerX = useTransform(springX, (val) =>
-    shouldReduceMotion ? 0 : val * 6.5
+    isInteractive ? val * 6.5 : 0
   );
-  const bodyPointerRotate = useTransform(springX, (val) =>
-    shouldReduceMotion ? 0 : val * 2.0
+  const bodyPointerScaleY = useTransform(springY, (val) =>
+    isInteractive ? 1 - val * 0.02 : 1
+  );
+
+  // Upper eyes tilt around (332px 235px) without rotating the base
+  const eyesPointerRotate = useTransform(springX, (val) =>
+    isInteractive ? val * 2.0 : 0
   );
 
   // Pupils strictly bounded within sclera
-  const pupilPointerX = useTransform(springX, (val) => val * 3.2);
-  const pupilPointerY = useTransform(springY, (val) => val * 2.8);
+  const pupilPointerX = useTransform(springX, (val) => (isInteractive ? val * 3.2 : 0));
+  const pupilPointerY = useTransform(springY, (val) => (isInteractive ? val * 2.8 : 0));
 
-  // Intro ceiling drop vs settled state variants
-  const bodyIntroVariants = {
+  // Deterministic WeStud-matched keyframes for all three lifecycle stages
+  const bodyVariants = {
+    // Stage 0: Pre-intro hidden state (0.0s - 1.8s)
+    hidden: {
+      x: 0,
+      y: -380,
+      rotate: 6,
+      skewX: 0,
+      scaleY: 1.0,
+      scaleX: 0.95,
+      opacity: 0,
+    },
+    // Stage 1: Intro sequence (0.0s - 4.4s)
+    // 0s-1.8s: offscreen top, hidden
+    // 2.5s: enters hanging from top edge, eyes peeking down
+    // 3.2s: curves mid-air in flight
+    // 3.8s: drops behind Yumi, aligns vertically
+    // 4.4s: settled into canonical peeker stance on baseline y=470
     intro: {
-      y: -360,
-      scaleY: 1.2,
-      scaleX: 0.9,
-      rotate: 8,
+      x: [0, 0, -10, -6, 0, 0],
+      y: [-380, -380, -230, -30, 0, 0],
+      rotate: [6, 6, 8, -8, 0, 0],
+      skewX: [0, 0, 0, 0, 0, 0],
+      scaleY: [1.0, 1.0, 1.02, 0.98, 1.0, 1.0],
+      scaleX: [0.95, 0.95, 0.98, 1.02, 1.0, 1.0],
+      opacity: [0, 0, 1, 1, 1, 1],
       transition: {
-        ...introSpringConfig,
-        delay: 0.15,
+        duration: 4.4,
+        times: [0, 0.41, 0.57, 0.73, 0.86, 1.0],
+        ease: 'easeInOut' as const,
       },
     },
-    idle: {
-      y: shouldReduceMotion ? 0 : [0, -4, 0],
-      rotate: 0,
-      x: 0,
-      skewX: 0,
+    // Stage 2: Settled (canonical proportional rest pose on baseline y=470)
+    settled: {
+      y: 0,
       scaleY: 1,
       scaleX: 1,
+      rotate: 0,
+      skewX: 0,
+      x: 0,
+      opacity: 1,
+      transition: { duration: 0.2, ease: 'easeOut' as const },
+    },
+    // Stage 3: Interactive states
+    idle: {
+      scaleY: shouldReduceMotion ? 1 : [1, 1.02, 1],
+      rotate: 0,
+      x: 0,
+      y: 0,
+      skewX: 0,
+      opacity: 1,
       transition: {
-        y: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' as const, delay: 0.3 },
+        scaleY: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' as const, delay: 0.3 },
         default: smoothStateTransition,
       },
     },
     pointerTracking: {
-      y: 0,
+      scaleY: 1,
       rotate: 0,
       x: 0,
-      scaleY: 1,
-      transition: { duration: 0.25, ease: 'easeOut' as const },
+      y: 0,
+      opacity: 1,
+      transition: { duration: 0.2, ease: 'easeOut' as const },
     },
     emailFocus: {
-      // Peeks forward and steps right to inspect email (frame_008)
       x: 10,
-      y: -3,
-      rotate: 1.8,
+      y: 0,
+      rotate: 0,
       skewX: -6.5,
+      scaleY: 1.02,
+      opacity: 1,
       transition: smoothStateTransition,
     },
     passwordFocus: {
-      // Slides left and hides partially behind Tupi (frame_011)
       x: -12,
-      y: 6,
-      rotate: -2.5,
+      y: 0,
+      rotate: 0,
       skewX: 4,
+      scaleY: 0.98,
+      opacity: 1,
       transition: smoothStateTransition,
     },
     passwordVisible: {
-      // Pops out alertly (frame_015)
-      y: -5,
+      y: 0,
       x: 6,
-      rotate: 0.5,
+      rotate: 0,
       skewX: -3,
-      scale: 1.02,
+      scaleY: 1.01,
+      opacity: 1,
       transition: smoothStateTransition,
     },
     error: {
-      // Sinks down worriedly looking up at Tupi (frame_013)
-      y: 18,
       x: -4,
-      rotate: -1.5,
+      y: 0, // Remains grounded
+      scaleY: 0.92, // Sinks down via squash anchored at y=470!
+      rotate: 0,
       skewX: 2,
+      opacity: 1,
       transition: { duration: 0.45, ease: 'easeOut' as const },
     },
     success: {
-      // Jumps forward and celebrates (frame_017)
       y: -26,
       x: 0,
       rotate: 0,
       skewX: 0,
       scale: 1.05,
+      opacity: 1,
       transition: celebrationSpring,
     },
   };
 
-  const isPasswordFocus = state === 'passwordFocus';
-  const isError = state === 'error';
-  const isEmailFocus = state === 'emailFocus';
-  const isPasswordVisible = state === 'passwordVisible';
+  const activeAnimation =
+    lifecycle === 'intro'
+      ? 'intro'
+      : lifecycle === 'settled'
+      ? 'settled'
+      : state;
+
+  const isPasswordFocus = lifecycle === 'interactive' && state === 'passwordFocus';
+  const isError = lifecycle === 'interactive' && state === 'error';
+  const isEmailFocus = lifecycle === 'interactive' && state === 'emailFocus';
 
   return (
     <motion.g
-      variants={bodyIntroVariants}
-      initial={!isIntroComplete ? 'intro' : false}
-      animate={state}
+      variants={bodyVariants}
+      initial={shouldReduceMotion ? 'settled' : 'hidden'}
+      animate={activeAnimation}
       style={{
         transformOrigin: '307px 470px',
       }}
     >
-      {/* Sub-group for pointer-driven skew, tilt, and peeking parallax */}
+      {/* Sub-group for pointer-driven skew and scale anchored at fixed base y=470 */}
       <motion.g
         style={{
           skewX: bodyPointerSkewX,
-          rotate: bodyPointerRotate,
           x: bodyPointerX,
+          scaleY: bodyPointerScaleY,
           transformOrigin: '307px 470px',
         }}
       >
-        {/* Main Black Rectangular Body */}
+        {/* Main Black Rectangular Body (Baseline flat on y=470) */}
         <rect
           x="260"
           y="195"
@@ -143,93 +194,110 @@ export const KuroCharacter: React.FC<CharacterCommonProps> = ({
           className="transition-colors duration-300"
         />
 
-        {/* ================= LEFT EYE ================= */}
-        <g>
-          {isPasswordFocus ? (
-            // Squinting closed eye slit (frame_011)
-            <line
-              x1="315"
-              y1="235"
-              x2="325"
-              y2="235"
-              stroke="#FFFFFF"
-              strokeWidth="2.8"
-              strokeLinecap="round"
-            />
-          ) : (
-            <circle cx="320" cy="235" r="7" fill="#FFFFFF" />
-          )}
+        {/* ================= UPPER EYES GROUP ================= */}
+        {/* Tilts subtly around eye center (332px 235px) without tilting base */}
+        <motion.g
+          style={{
+            rotate: eyesPointerRotate,
+            transformOrigin: '332px 235px',
+          }}
+        >
+          {/* Left Eye */}
+          <g>
+            {isPasswordFocus ? (
+              <line
+                x1="315"
+                y1="235"
+                x2="325"
+                y2="235"
+                stroke="#FFFFFF"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+              />
+            ) : (
+              <circle cx="320" cy="235" r="7" fill="#FFFFFF" />
+            )}
 
-          {/* Left Pupil */}
-          {!isPasswordFocus && (
-            <motion.circle
-              cx="320"
-              cy="235"
-              r="3.5"
-              fill="#19191D"
-              style={
-                isError || isEmailFocus
-                  ? undefined
-                  : {
-                      x: pupilPointerX,
-                      y: pupilPointerY,
-                    }
-              }
-              animate={
-                isError
-                  ? { x: -2.5, y: -2.5 } // Looks up worriedly at Tupi (frame_013)
-                  : isEmailFocus
-                  ? { x: 3.2, y: 0.2 }
-                  : undefined
-              }
-              transition={{ duration: 0.25 }}
-            />
-          )}
-        </g>
+            {!isPasswordFocus && (
+              <motion.circle
+                cx="320"
+                cy="235"
+                r="3.5"
+                fill="#19191D"
+                style={
+                  lifecycle === 'intro' || isError || isEmailFocus || !isInteractive
+                    ? undefined
+                    : {
+                        x: pupilPointerX,
+                        y: pupilPointerY,
+                      }
+                }
+                animate={
+                  lifecycle === 'intro'
+                    ? { x: [0, 0, 0, -1, 0, 0], y: [0, 0, 3, 1.5, 0, 0] }
+                    : isError
+                    ? { x: -2.5, y: -2.5 }
+                    : isEmailFocus
+                    ? { x: 3.2, y: 0.2 }
+                    : { x: 0, y: 0 }
+                }
+                transition={
+                  lifecycle === 'intro'
+                    ? { duration: 4.4, times: [0, 0.41, 0.57, 0.73, 0.86, 1.0], ease: 'easeInOut' as const }
+                    : { duration: 0.25 }
+                }
+              />
+            )}
+          </g>
 
-        {/* ================= RIGHT EYE ================= */}
-        <g>
-          {isPasswordFocus ? (
-            // Squinting closed eye slit (frame_011)
-            <line
-              x1="339"
-              y1="235"
-              x2="349"
-              y2="235"
-              stroke="#FFFFFF"
-              strokeWidth="2.8"
-              strokeLinecap="round"
-            />
-          ) : (
-            <circle cx="344" cy="235" r="7" fill="#FFFFFF" />
-          )}
+          {/* Right Eye */}
+          <g>
+            {isPasswordFocus ? (
+              <line
+                x1="339"
+                y1="235"
+                x2="349"
+                y2="235"
+                stroke="#FFFFFF"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+              />
+            ) : (
+              <circle cx="344" cy="235" r="7" fill="#FFFFFF" />
+            )}
 
-          {/* Right Pupil */}
-          {!isPasswordFocus && (
-            <motion.circle
-              cx="344"
-              cy="235"
-              r="3.5"
-              fill="#19191D"
-              style={
-                isError || isEmailFocus
-                  ? undefined
-                  : {
-                      x: pupilPointerX,
-                      y: pupilPointerY,
-                    }
-              }
-              animate={
-                isError
-                  ? { x: -2.5, y: -2.5 }
-                  : isEmailFocus
-                  ? { x: 3.2, y: 0.2 }
-                  : undefined
-              }
-              transition={{ duration: 0.25 }}
-            />
-          )}
-        </g>
+            {!isPasswordFocus && (
+              <motion.circle
+                cx="344"
+                cy="235"
+                r="3.5"
+                fill="#19191D"
+                style={
+                  lifecycle === 'intro' || isError || isEmailFocus || !isInteractive
+                    ? undefined
+                    : {
+                        x: pupilPointerX,
+                        y: pupilPointerY,
+                      }
+                }
+                animate={
+                  lifecycle === 'intro'
+                    ? { x: [0, 0, 0, -1, 0, 0], y: [0, 0, 3, 1.5, 0, 0] }
+                    : isError
+                    ? { x: -2.5, y: -2.5 }
+                    : isEmailFocus
+                    ? { x: 3.2, y: 0.2 }
+                    : { x: 0, y: 0 }
+                }
+                transition={
+                  lifecycle === 'intro'
+                    ? { duration: 4.4, times: [0, 0.41, 0.57, 0.73, 0.86, 1.0], ease: 'easeInOut' as const }
+                    : { duration: 0.25 }
+                }
+              />
+            )}
+          </g>
+        </motion.g>
       </motion.g>
     </motion.g>
   );

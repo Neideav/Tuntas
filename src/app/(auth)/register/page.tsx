@@ -39,13 +39,13 @@ export default function RegisterPage() {
 
     if (password !== passwordConfirmation) {
       setInteractionState('error');
-      setError('Passwords do not match.');
+      setError('Konfirmasi kata sandi tidak cocok.');
       return;
     }
 
     if (password.length < 8) {
       setInteractionState('error');
-      setError('Password must be at least 8 characters long.');
+      setError('Kata sandi minimal harus 8 karakter.');
       return;
     }
 
@@ -74,7 +74,7 @@ export default function RegisterPage() {
       setError(
         extractApiErrorMessage(
           err,
-          'Registration failed. Please check your details.'
+          'Pendaftaran akun gagal. Silakan periksa kembali data Anda.'
         )
       );
       setTimeout(() => {
@@ -89,7 +89,7 @@ export default function RegisterPage() {
     <AuthLayout
       interactionState={interactionState}
       title="Create account"
-      subtitle="Start your educational journey with Tuntas"
+      subtitle="Mulai perjalanan produktivitas Anda bersama Tuntas"
     >
       <div className="space-y-4">
         {/* Error Alert */}

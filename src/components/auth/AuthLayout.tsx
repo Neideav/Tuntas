@@ -49,9 +49,12 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
           </span>
         </div>
 
-        {/* Large Interactive Mascot Scene anchored to the bottom edge */}
-        <div className="w-full max-w-[620px] mx-auto mt-auto flex items-end justify-center z-10">
-          <AuthCharacters state={interactionState} className="w-full max-w-[580px] h-auto max-h-[540px]" />
+        {/* Massive Interactive Mascot Scene anchored to the bottom edge */}
+        <div className="w-full flex-1 flex items-end justify-center z-10 min-h-0 pt-4 pb-0">
+          <AuthCharacters
+            state={interactionState}
+            className="w-full h-full max-w-[880px] 2xl:max-w-[1020px] max-h-[720px] 2xl:max-h-[840px]"
+          />
         </div>
 
         {/* Subtle baseline line along the floor */}

@@ -78,11 +78,18 @@ export default function LoginPage() {
     setTimeout(() => setInteractionState('idle'), 800);
   };
 
+  const handleFillCustomer = () => {
+    setEmail('customer@pasaria.id');
+    setPassword('Password123!');
+    setInteractionState('emailFocus');
+    setTimeout(() => setInteractionState('idle'), 800);
+  };
+
   return (
     <AuthLayout
       interactionState={interactionState}
       title="Welcome back!"
-      subtitle="Please enter your details"
+      subtitle="Silakan masukkan kredensial akun Anda"
     >
       <div className="space-y-4">
         {/* Error Alert */}
@@ -99,18 +106,18 @@ export default function LoginPage() {
             <div className="flex items-start gap-2.5 text-xs text-amber-900 font-semibold leading-relaxed">
               <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
               <div>
-                <p className="font-bold">Account Not Registered</p>
-                <p className="text-[11px] text-amber-700 font-normal mt-0.5">
-                  The email <span className="font-semibold">{email}</span> is not registered yet. Please create an account to start using Tuntas.
+                <p className="font-bold text-[13px]">Akun Belum Terdaftar</p>
+                <p className="text-[11px] text-amber-800 font-normal mt-0.5">
+                  Email <span className="font-semibold text-amber-950">{email}</span> belum terdaftar di sistem Tuntas. Silakan buat akun terlebih dahulu untuk melanjutkan.
                 </p>
               </div>
             </div>
             <Link
               href={`/register?email=${encodeURIComponent(email)}`}
-              className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition shadow-2xs cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-full bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white text-xs font-bold transition shadow-xs cursor-pointer"
             >
               <UserPlus className="h-3.5 w-3.5" />
-              <span>Create Account Now</span>
+              <span>Buat Akun Sekarang</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -190,15 +197,25 @@ export default function LoginPage() {
           {/* Google OAuth Button */}
           <GoogleAuthButton label="Log in with Google" disabled={loading} />
 
-          {/* Demo Credentials Quick Trigger */}
-          <button
-            type="button"
-            onClick={handleFillDemo}
-            className="w-full py-1 text-center text-[10px] text-[#858585] hover:text-[#19191D] font-medium transition cursor-pointer flex items-center justify-center gap-1.5"
-          >
-            <Sparkles className="h-3 w-3 text-amber-500" />
-            <span>Use Demo Account (demo@tuntas.test)</span>
-          </button>
+          {/* Demo Credentials Quick Triggers */}
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={handleFillCustomer}
+              className="py-1 px-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-semibold transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Sparkles className="h-3 w-3 text-indigo-500" />
+              <span>customer@pasaria.id</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleFillDemo}
+              className="py-1 px-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-semibold transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Sparkles className="h-3 w-3 text-amber-500" />
+              <span>demo@tuntas.test</span>
+            </button>
+          </div>
         </form>
 
         {/* Footer Registration Link */}

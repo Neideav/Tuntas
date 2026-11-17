@@ -1,7 +1,8 @@
 import { MotionValue } from 'motion/react';
 
+export type LifecycleStage = 'intro' | 'settled' | 'interactive';
+
 export type MascotState =
-  | 'intro'
   | 'idle'
   | 'pointerTracking'
   | 'emailFocus'
@@ -19,8 +20,8 @@ export interface NormalizedPointer {
 
 export interface CharacterCommonProps {
   state: MascotState;
+  lifecycle: LifecycleStage;
   pointer: NormalizedPointer;
-  isIntroComplete?: boolean;
   shouldReduceMotion?: boolean;
   className?: string;
 }
