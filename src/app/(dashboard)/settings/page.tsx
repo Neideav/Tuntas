@@ -9,6 +9,7 @@ import {
   Bell,
   Save,
   CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +28,9 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [passwordStatusMsg, setPasswordStatusMsg] = useState<string | null>(null);
+  const [passwordErrorMsg, setPasswordErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
@@ -61,6 +65,8 @@ export default function SettingsPage() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setStatusMsg(null);
+    setErrorMsg(null);
     try {
       setSavingProfile(true);
       const res = await api.put('/auth/profile', {
@@ -80,6 +86,15 @@ export default function SettingsPage() {
           );
         }
 
+        // Notify Navbar and other components of updated profile
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('tuntas:profile-updated', {
+              detail: { name, email },
+            })
+          );
+        }
+
         // Also save settings
         await api.put('/settings', {
           email_notifications: emailNotif,
@@ -88,10 +103,10 @@ export default function SettingsPage() {
         });
 
         setStatusMsg('Profile and preferences updated successfully.');
-        setTimeout(() => setStatusMsg(null), 3500);
+        setTimeout(() => setStatusMsg(null), 4000);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Update failed.');
+      setErrorMsg(err.response?.data?.message || 'Failed to update profile. Please check your inputs.');
     } finally {
       setSavingProfile(false);
     }
@@ -99,8 +114,16 @@ export default function SettingsPage() {
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPasswordStatusMsg(null);
+    setPasswordErrorMsg(null);
+
+    if (newPassword.length < 8) {
+      setPasswordErrorMsg('New password must be at least 8 characters.');
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
-      alert('New password and confirmation do not match.');
+      setPasswordErrorMsg('New password and confirmation do not match.');
       return;
     }
 
@@ -113,14 +136,14 @@ export default function SettingsPage() {
       });
 
       if (res.data?.success) {
-        setStatusMsg('Password changed successfully.');
+        setPasswordStatusMsg('Password changed successfully.');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
-        setTimeout(() => setStatusMsg(null), 3500);
+        setTimeout(() => setPasswordStatusMsg(null), 4000);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Password update failed.');
+      setPasswordErrorMsg(err.response?.data?.message || 'Password update failed. Please check your current password.');
     } finally {
       setSavingPassword(false);
     }
@@ -136,13 +159,6 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {statusMsg && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          <span>{statusMsg}</span>
-        </div>
-      )}
-
       {/* Profile Form */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-5">
         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -151,6 +167,20 @@ export default function SettingsPage() {
             Profile Details
           </h3>
         </div>
+
+        {statusMsg && (
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{statusMsg}</span>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         <form onSubmit={handleUpdateProfile} className="space-y-4">
           <Input
@@ -233,6 +263,20 @@ export default function SettingsPage() {
             Change Password
           </h3>
         </div>
+
+        {passwordStatusMsg && (
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{passwordStatusMsg}</span>
+          </div>
+        )}
+
+        {passwordErrorMsg && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+            <span>{passwordErrorMsg}</span>
+          </div>
+        )}
 
         <form onSubmit={handleUpdatePassword} className="space-y-4">
           <Input

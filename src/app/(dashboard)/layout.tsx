@@ -11,12 +11,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
   return (
     <div
-      className={`min-h-screen transition-[padding] duration-200 ease-out ${
-        isCollapsed ? 'pl-20' : 'pl-64'
+      className={`min-h-screen transition-[padding] duration-200 ease-out pl-0 ${
+        isCollapsed ? 'md:pl-20' : 'md:pl-64'
       }`}
     >
       <Navbar />
-      <main className="px-8 py-6 w-full">
+      <main className="px-4 py-4 sm:px-6 sm:py-6 md:px-8 w-full">
         <PageTransition>{children}</PageTransition>
       </main>
     </div>

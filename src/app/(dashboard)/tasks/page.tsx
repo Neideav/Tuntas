@@ -100,6 +100,83 @@ export default function TasksPage() {
   const [formSubtasks, setFormSubtasks] = useState<string[]>(['']);
   const [saving, setSaving] = useState(false);
 
+  // Edit Task State
+  const [taskEditTitle, setTaskEditTitle] = useState('');
+  const [taskEditDescription, setTaskEditDescription] = useState('');
+  const [taskEditPriority, setTaskEditPriority] = useState<Task['priority']>('medium');
+  const [taskEditStatus, setTaskEditStatus] = useState<Task['status']>('todo');
+  const [taskEditDueDate, setTaskEditDueDate] = useState('');
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [savingEditTask, setSavingEditTask] = useState(false);
+
+  const openTaskDetail = (task: Task) => {
+    setSelectedTask(task);
+    setTaskEditTitle(task.title);
+    setTaskEditDescription(task.description || '');
+    setTaskEditPriority(task.priority);
+    setTaskEditStatus(task.status);
+    setTaskEditDueDate(task.due_date ? task.due_date.split('T')[0] : '');
+    setNewSubtaskTitle('');
+  };
+
+  const handleSaveTaskEdits = async () => {
+    if (!selectedTask || !taskEditTitle.trim()) return;
+    try {
+      setSavingEditTask(true);
+      const res = await api.put(`/tasks/${selectedTask.id}`, {
+        title: taskEditTitle,
+        description: taskEditDescription,
+        priority: taskEditPriority,
+        status: taskEditStatus,
+        due_date: taskEditDueDate || null,
+      });
+
+      if (res.data?.success) {
+        fetchTasks();
+        setSelectedTask(null);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingEditTask(false);
+    }
+  };
+
+  const handleAddModalSubtask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTask || !newSubtaskTitle.trim()) return;
+    try {
+      const res = await api.post(`/tasks/${selectedTask.id}/subtasks`, {
+        title: newSubtaskTitle.trim(),
+      });
+      if (res.data?.success) {
+        const added = res.data.data;
+        const updatedSubs = [...(selectedTask.subtasks || []), added];
+        const updatedTask = { ...selectedTask, subtasks: updatedSubs };
+        setSelectedTask(updatedTask);
+        setTasks((prev) => prev.map((t) => (t.id === selectedTask.id ? updatedTask : t)));
+        setNewSubtaskTitle('');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: number) => {
+    if (!selectedTask) return;
+    try {
+      const res = await api.delete(`/subtasks/${subtaskId}`);
+      if (res.data?.success) {
+        const updatedSubs = (selectedTask.subtasks || []).filter((s) => s.id !== subtaskId);
+        const updatedTask = { ...selectedTask, subtasks: updatedSubs };
+        setSelectedTask(updatedTask);
+        setTasks((prev) => prev.map((t) => (t.id === selectedTask.id ? updatedTask : t)));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const fetchTasks = async () => {
     try {
       setLoading(true);
@@ -426,7 +503,7 @@ export default function TasksPage() {
                           whileHover={{ y: -2 }}
                           transition={{ type: "spring", stiffness: 420, damping: 28 }}
                           key={task.id}
-                          onClick={() => setSelectedTask(task)}
+                          onClick={() => openTaskDetail(task)}
                           className="group bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs hover:shadow-md transition-shadow cursor-pointer space-y-3"
                         >
                           {/* Top: Priority Pill & More options */}
@@ -443,12 +520,13 @@ export default function TasksPage() {
                               {task.priority.toUpperCase()}
                             </span>
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteTask(task.id);
+                                openTaskDetail(task);
                               }}
-                              title="Delete Task"
-                              className="text-slate-300 group-hover:text-slate-500 hover:text-red-500 transition p-1 cursor-pointer"
+                              title="Edit Task Details"
+                              className="text-slate-300 group-hover:text-slate-500 hover:text-sky-600 transition p-1 cursor-pointer"
                             >
                               <MoreVertical className="h-3.5 w-3.5" />
                             </button>
@@ -520,15 +598,17 @@ export default function TasksPage() {
                             </span>
                           </div>
 
-                          {/* Bottom Row: Collaborators Stack, Paperclip, Comments (As in screenshot) */}
+                          {/* Bottom Row: Division / Category tag, Subtasks count */}
                           <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
-                            <AvatarStack
-                              users={[
-                                { initials: 'UL', bgColor: 'bg-emerald-100 text-emerald-800' },
-                                { initials: 'DM', bgColor: 'bg-slate-100 text-slate-700' },
-                              ]}
-                              max={2}
-                            />
+                            {task.category?.name ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                {task.category.name}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                Personal
+                              </span>
+                            )}
 
                             <div className="flex items-center gap-2">
                               <div className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-2.5 py-1 text-xs text-slate-600 font-medium shadow-2xs">
@@ -574,7 +654,7 @@ export default function TasksPage() {
                   return (
                     <tr
                       key={task.id}
-                      onClick={() => setSelectedTask(task)}
+                      onClick={() => openTaskDetail(task)}
                       className="hover:bg-slate-50/70 transition cursor-pointer"
                     >
                       <td className="px-6 py-4">
@@ -757,8 +837,8 @@ export default function TasksPage() {
         <Modal
           isOpen={!!selectedTask}
           onClose={() => setSelectedTask(null)}
-          title={selectedTask.title}
-          description={`Created in ${selectedTask.category?.name || 'Workspace'}`}
+          title="Task Details & Edit"
+          description={`Category: ${selectedTask.category?.name || 'Personal Workspace'}`}
           footer={
             <div className="flex items-center justify-between w-full">
               <Button
@@ -766,27 +846,50 @@ export default function TasksPage() {
                 size="sm"
                 onClick={() => handleDeleteTask(selectedTask.id)}
               >
-                Delete
+                Delete Task
               </Button>
-              <Button size="sm" onClick={() => setSelectedTask(null)}>
-                Close
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setSelectedTask(null)}>
+                  Cancel
+                </Button>
+                <Button size="sm" loading={savingEditTask} onClick={handleSaveTaskEdits}>
+                  Save Changes
+                </Button>
+              </div>
             </div>
           }
         >
-          <div className="space-y-5">
-            {/* Status & Priority selector */}
-            <div className="flex items-center gap-3">
+          <div className="space-y-4">
+            <Input
+              label="Task Title"
+              value={taskEditTitle}
+              onChange={(e) => setTaskEditTitle(e.target.value)}
+              required
+            />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                value={taskEditDescription}
+                onChange={(e) => setTaskEditDescription(e.target.value)}
+                placeholder="Task description or notes..."
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+              />
+            </div>
+
+            {/* Status, Priority, Due Date Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                   Status
-                </span>
+                </label>
                 <select
-                  value={selectedTask.status}
-                  onChange={(e) =>
-                    handleMoveTaskStatus(selectedTask, e.target.value as any)
-                  }
-                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                  value={taskEditStatus}
+                  onChange={(e) => setTaskEditStatus(e.target.value as any)}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-semibold focus:border-sky-500 focus:outline-none"
                 >
                   <option value="todo">To-Do</option>
                   <option value="in_progress">On Progress</option>
@@ -796,55 +899,91 @@ export default function TasksPage() {
               </div>
 
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                   Priority
-                </span>
-                <Badge variant={selectedTask.priority}>{selectedTask.priority}</Badge>
+                </label>
+                <select
+                  value={taskEditPriority}
+                  onChange={(e) => setTaskEditPriority(e.target.value as any)}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-semibold focus:border-sky-500 focus:outline-none"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Due Date
+                </label>
+                <input
+                  type="date"
+                  value={taskEditDueDate}
+                  onChange={(e) => setTaskEditDueDate(e.target.value)}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs font-semibold focus:border-sky-500 focus:outline-none"
+                />
               </div>
             </div>
 
-            {/* Description */}
-            {selectedTask.description && (
-              <div>
-                <h5 className="text-xs font-bold text-slate-700 uppercase mb-1">Description</h5>
-                <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  {selectedTask.description}
-                </p>
-              </div>
-            )}
-
             {/* Interactive Subtasks checklist */}
-            <div>
-              <h5 className="text-xs font-bold text-slate-700 uppercase mb-2">
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Checklist ({selectedTask.subtasks?.filter((s) => s.is_completed).length || 0}/
                 {selectedTask.subtasks?.length || 0})
               </h5>
-              <div className="space-y-1.5">
+
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {selectedTask.subtasks && selectedTask.subtasks.length > 0 ? (
                   selectedTask.subtasks.map((sub) => (
-                    <label
+                    <div
                       key={sub.id}
-                      className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer transition"
+                      className="flex items-center justify-between p-2 rounded-xl border border-slate-100 hover:bg-slate-50 transition"
                     >
-                      <input
-                        type="checkbox"
-                        checked={sub.is_completed}
-                        onChange={() => handleToggleSubtask(sub, selectedTask)}
-                        className="h-4 w-4 rounded text-sky-600 focus:ring-sky-500"
-                      />
-                      <span
-                        className={`text-sm ${
-                          sub.is_completed ? 'line-through text-slate-400' : 'text-slate-800'
-                        }`}
+                      <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                        <input
+                          type="checkbox"
+                          checked={sub.is_completed}
+                          onChange={() => handleToggleSubtask(sub, selectedTask)}
+                          className="h-4 w-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                        />
+                        <span
+                          className={`text-xs ${
+                            sub.is_completed ? 'line-through text-slate-400' : 'text-slate-800 font-medium'
+                          }`}
+                        >
+                          {sub.title}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSubtask(sub.id)}
+                        className="text-slate-300 hover:text-rose-500 p-1 transition cursor-pointer"
+                        title="Delete subtask"
                       >
-                        {sub.title}
-                      </span>
-                    </label>
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   ))
                 ) : (
-                  <p className="text-xs text-slate-400 italic">No subtasks for this item.</p>
+                  <p className="text-xs text-slate-400 italic">No subtasks yet.</p>
                 )}
               </div>
+
+              {/* Add subtask inline */}
+              <form onSubmit={handleAddModalSubtask} className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder="Add item to checklist..."
+                  value={newSubtaskTitle}
+                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                  className="flex-1 h-9 px-3 rounded-xl border border-slate-200 text-xs focus:border-sky-500 focus:outline-none"
+                />
+                <Button size="sm" type="submit" variant="secondary">
+                  Add Item
+                </Button>
+              </form>
             </div>
           </div>
         </Modal>

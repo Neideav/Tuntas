@@ -47,6 +47,16 @@ Route::prefix('v1')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
         Route::put('/auth/password', [AuthController::class, 'updatePassword']);
+        Route::get('/activity', function (\Illuminate\Http\Request $request) {
+            $logs = \App\Models\AuditLog::where('user_id', $request->user()->id)
+                ->orderBy('created_at', 'desc')
+                ->limit(40)
+                ->get();
+            return response()->json([
+                'success' => true,
+                'data' => $logs,
+            ]);
+        });
 
         // Dashboard Metrics
         Route::get('/dashboard', [DashboardController::class, 'index']);

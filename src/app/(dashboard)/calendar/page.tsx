@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
   Calendar as CalendarIcon,
   CheckSquare,
@@ -10,16 +11,21 @@ import {
   ChevronRight,
   Clock,
   Layers,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function CalendarPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     fetchEvents();
@@ -90,9 +96,18 @@ export default function CalendarPage() {
 
         {/* Month Selector */}
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setCurrentDate(new Date())}
+            className="text-xs font-semibold"
+          >
+            Today
+          </Button>
           <button
             onClick={prevMonth}
-            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition shadow-xs"
+            aria-label="Previous Month"
+            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition shadow-xs cursor-pointer"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -101,7 +116,8 @@ export default function CalendarPage() {
           </span>
           <button
             onClick={nextMonth}
-            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition shadow-xs"
+            aria-label="Next Month"
+            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition shadow-xs cursor-pointer"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -163,10 +179,14 @@ export default function CalendarPage() {
             return (
               <div
                 key={day.toISOString()}
-                className={`h-28 rounded-xl p-2 border transition overflow-y-auto space-y-1 ${
+                onClick={() => {
+                  setSelectedDay(day);
+                  setIsDetailOpen(true);
+                }}
+                className={`h-28 rounded-xl p-2 border transition overflow-y-auto space-y-1 cursor-pointer select-none ${
                   isToday
-                    ? 'border-sky-300 bg-sky-50/30'
-                    : 'border-slate-100 bg-white hover:border-slate-200'
+                    ? 'border-sky-300 bg-sky-50/40 ring-1 ring-sky-200'
+                    : 'border-slate-100 bg-white hover:border-sky-200 hover:bg-slate-50/50'
                 }`}
               >
                 <div className="flex items-center justify-between text-xs font-bold">
@@ -219,6 +239,120 @@ export default function CalendarPage() {
           })}
         </div>
       </div>
+
+      {/* DAY EVENT DETAILS MODAL */}
+      {selectedDay && (
+        <Modal
+          isOpen={isDetailOpen}
+          onClose={() => setIsDetailOpen(false)}
+          title={`Schedule for ${selectedDay.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })}`}
+          description="Detailed breakdown of scheduled tasks, deliveries, sessions, and examinations."
+          footer={
+            <Button size="sm" onClick={() => setIsDetailOpen(false)}>
+              Close
+            </Button>
+          }
+        >
+          {(() => {
+            const dayEvents = getDayEvents(selectedDay);
+            if (dayEvents.length === 0) {
+              return (
+                <div className="py-8 text-center space-y-2">
+                  <CalendarIcon className="h-8 w-8 text-slate-300 mx-auto" />
+                  <p className="text-sm font-semibold text-slate-700">No events scheduled for this day</p>
+                  <p className="text-xs text-slate-400">Tasks with due dates or scheduled examinations will automatically populate here.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {dayEvents.map((ev: any, idx: number) => {
+                  const isExam = ev.type === 'examination' || ev.type === 'exam';
+                  const isProject = ev.type === 'project';
+                  const isSession = ev.type === 'learning_session' || ev.type === 'study_session';
+                  const isHabit = ev.type === 'habit';
+
+                  let badgeVariant: any = 'todo';
+                  let targetHref = '/tasks';
+                  let typeLabel = 'Task';
+
+                  if (isExam) {
+                    badgeVariant = 'urgent';
+                    targetHref = '/examinations';
+                    typeLabel = 'Examination';
+                  } else if (isProject) {
+                    badgeVariant = 'in_progress';
+                    targetHref = '/projects';
+                    typeLabel = 'Project Delivery';
+                  } else if (isSession) {
+                    badgeVariant = 'secondary';
+                    targetHref = '/learning';
+                    typeLabel = 'Study Session';
+                  } else if (isHabit) {
+                    badgeVariant = 'completed';
+                    targetHref = '/habits';
+                    typeLabel = 'Habit Routine';
+                  }
+
+                  return (
+                    <div
+                      key={idx}
+                      className="p-3.5 rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50/60 transition space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={badgeVariant}>{typeLabel}</Badge>
+                            {ev.status && (
+                              <span className="text-[10px] font-semibold uppercase text-slate-400">
+                                {ev.status}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                            {ev.title}
+                          </h4>
+                        </div>
+
+                        <Link
+                          href={targetHref}
+                          className="shrink-0 text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1 hover:underline"
+                        >
+                          View <ExternalLink className="h-3 w-3" />
+                        </Link>
+                      </div>
+
+                      {ev.description && (
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          {ev.description}
+                        </p>
+                      )}
+
+                      {(ev.start || ev.date) && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+                          <Clock className="h-3 w-3" />
+                          <span>
+                            {new Date(ev.start || ev.date).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
     </div>
   );
 }

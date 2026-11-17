@@ -10,6 +10,7 @@ import {
   ArrowRight,
   TrendingUp,
   Award,
+  Edit2,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +45,15 @@ export default function GoalsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedGoalForMilestone, setSelectedGoalForMilestone] = useState<Goal | null>(null);
 
+  // Edit Goal State
+  const [editGoal, setEditGoal] = useState<Goal | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editTargetDate, setEditTargetDate] = useState('');
+  const [editStatus, setEditStatus] = useState<Goal['status']>('in_progress');
+  const [savingEditGoal, setSavingEditGoal] = useState(false);
+
   // Goal Form
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -56,6 +66,52 @@ export default function GoalsPage() {
   const [milestoneTarget, setMilestoneTarget] = useState('100');
   const [milestoneUnit, setMilestoneUnit] = useState('%');
   const [savingMilestone, setSavingMilestone] = useState(false);
+
+  const openEditGoalModal = (goal: Goal) => {
+    setEditGoal(goal);
+    setEditTitle(goal.title);
+    setEditDescription(goal.description || '');
+    setEditStartDate(goal.start_date ? goal.start_date.split('T')[0] : '');
+    setEditTargetDate(goal.target_date ? goal.target_date.split('T')[0] : '');
+    setEditStatus(goal.status);
+  };
+
+  const handleSaveEditGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editGoal || !editTitle.trim()) return;
+
+    try {
+      setSavingEditGoal(true);
+      const res = await api.put(`/goals/${editGoal.id}`, {
+        title: editTitle,
+        description: editDescription,
+        start_date: editStartDate,
+        target_date: editTargetDate,
+        status: editStatus,
+      });
+
+      if (res.data?.success) {
+        setEditGoal(null);
+        fetchGoals();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingEditGoal(false);
+    }
+  };
+
+  const handleDeleteMilestone = async (milestoneId: number) => {
+    if (!confirm('Are you sure you want to delete this key result?')) return;
+    try {
+      const res = await api.delete(`/milestones/${milestoneId}`);
+      if (res.data?.success) {
+        fetchGoals();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchGoals = async () => {
     try {
@@ -239,8 +295,15 @@ export default function GoalsPage() {
                       Add Key Result
                     </Button>
                     <button
+                      onClick={() => openEditGoalModal(goal)}
+                      className="text-slate-300 hover:text-sky-600 p-1.5 transition cursor-pointer"
+                      title="Edit Objective"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
                       onClick={() => handleDeleteGoal(goal.id)}
-                      className="text-slate-300 hover:text-red-500 p-1.5 transition"
+                      className="text-slate-300 hover:text-rose-500 p-1.5 transition cursor-pointer"
                       title="Delete Goal"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -285,9 +348,19 @@ export default function GoalsPage() {
                               <span className="text-xs font-bold text-slate-800 leading-snug">
                                 {m.title}
                               </span>
-                              <span className="text-[11px] font-bold text-slate-600 shrink-0">
-                                {m.current_value} / {m.target_value} {m.unit}
-                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[11px] font-bold text-slate-600">
+                                  {m.current_value} / {m.target_value} {m.unit}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMilestone(m.id)}
+                                  className="text-slate-300 hover:text-rose-500 transition p-0.5 cursor-pointer"
+                                  title="Delete Key Result"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
 
                             {/* Slider / Value input */}
@@ -428,6 +501,80 @@ export default function GoalsPage() {
                 onChange={(e) => setMilestoneUnit(e.target.value)}
                 required
               />
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* EDIT GOAL MODAL */}
+      {editGoal && (
+        <Modal
+          isOpen={!!editGoal}
+          onClose={() => setEditGoal(null)}
+          title="Edit Objective"
+          description={`Update timeline and details for "${editGoal.title}".`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditGoal(null)}>
+                Cancel
+              </Button>
+              <Button loading={savingEditGoal} onClick={handleSaveEditGoal}>
+                Save Changes
+              </Button>
+            </>
+          }
+        >
+          <form onSubmit={handleSaveEditGoal} className="space-y-4">
+            <Input
+              label="Objective Title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              required
+            />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Start Date"
+                type="date"
+                value={editStartDate}
+                onChange={(e) => setEditStartDate(e.target.value)}
+                required
+              />
+              <Input
+                label="Target Date"
+                type="date"
+                value={editTargetDate}
+                onChange={(e) => setEditTargetDate(e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Status
+              </label>
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value as any)}
+                className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-sky-500 focus:outline-none"
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="achieved">Achieved</option>
+                <option value="abandoned">Abandoned</option>
+              </select>
             </div>
           </form>
         </Modal>

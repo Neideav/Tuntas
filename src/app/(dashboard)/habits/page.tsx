@@ -11,6 +11,10 @@ import {
   Award,
   Trash2,
   Snowflake,
+  Edit2,
+  History,
+  AlertCircle,
+  TrendingUp,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -37,8 +41,21 @@ export default function HabitsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isFreezeModalOpen, setIsFreezeModalOpen] = useState<Habit | null>(null);
   const [freezeDate, setFreezeDate] = useState('');
+  const [freezeError, setFreezeError] = useState<string | null>(null);
 
-  // Form
+  // Edit Habit State
+  const [editHabit, setEditHabit] = useState<Habit | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editFrequency, setEditFrequency] = useState<'daily' | 'weekdays' | 'weekly'>('daily');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // History State
+  const [historyHabit, setHistoryHabit] = useState<Habit | null>(null);
+  const [historyData, setHistoryData] = useState<any | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Create Form
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [frequency, setFrequency] = useState<'daily' | 'weekdays' | 'weekly'>('daily');
@@ -113,8 +130,55 @@ export default function HabitsPage() {
     }
   };
 
+  const openEditModal = (habit: Habit) => {
+    setEditHabit(habit);
+    setEditTitle(habit.title);
+    setEditDescription(habit.description || '');
+    setEditFrequency(habit.frequency);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editHabit || !editTitle.trim()) return;
+
+    try {
+      setSavingEdit(true);
+      const res = await api.put(`/habits/${editHabit.id}`, {
+        title: editTitle,
+        description: editDescription,
+        frequency: editFrequency,
+      });
+
+      if (res.data?.success) {
+        setEditHabit(null);
+        fetchHabits();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const openHistoryModal = async (habit: Habit) => {
+    setHistoryHabit(habit);
+    setHistoryData(null);
+    setLoadingHistory(true);
+    try {
+      const res = await api.get(`/habits/${habit.id}/history`);
+      if (res.data?.success) {
+        setHistoryData(res.data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const handleApplyFreeze = async () => {
     if (!isFreezeModalOpen || !freezeDate) return;
+    setFreezeError(null);
     try {
       const res = await api.post(`/habits/${isFreezeModalOpen.id}/freeze`, {
         date: freezeDate,
@@ -124,8 +188,8 @@ export default function HabitsPage() {
         setFreezeDate('');
         fetchHabits();
       }
-    } catch (err) {
-      alert('Could not apply freeze token.');
+    } catch (err: any) {
+      setFreezeError(err.response?.data?.message || 'Could not apply freeze token.');
     }
   };
 
@@ -179,7 +243,7 @@ export default function HabitsPage() {
               className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition space-y-4 flex flex-col justify-between"
             >
               <div className="space-y-3">
-                {/* Header: Title & Delete */}
+                {/* Header: Title, Edit & Delete */}
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -189,12 +253,22 @@ export default function HabitsPage() {
                       {habit.title}
                     </h3>
                   </div>
-                  <button
-                    onClick={() => handleDelete(habit.id)}
-                    className="text-slate-300 hover:text-red-500 p-1 transition"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => openEditModal(habit)}
+                      title="Edit Habit"
+                      className="text-slate-300 hover:text-sky-600 p-1 transition cursor-pointer"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(habit.id)}
+                      title="Delete Habit"
+                      className="text-slate-300 hover:text-rose-500 p-1 transition cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {habit.description && (
@@ -234,12 +308,26 @@ export default function HabitsPage() {
                   </div>
                   {habit.freeze_tokens > 0 && (
                     <button
-                      onClick={() => setIsFreezeModalOpen(habit)}
-                      className="text-[11px] font-bold text-sky-600 hover:text-sky-700 underline"
+                      onClick={() => {
+                        setFreezeError(null);
+                        setIsFreezeModalOpen(habit);
+                      }}
+                      className="text-[11px] font-bold text-sky-600 hover:text-sky-700 underline cursor-pointer"
                     >
                       Use Shield
                     </button>
                   )}
+                </div>
+
+                {/* History & Consistency link */}
+                <div className="pt-1 border-t border-slate-100 flex items-center justify-between">
+                  <button
+                    onClick={() => openHistoryModal(habit)}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition cursor-pointer"
+                  >
+                    <History className="h-3.5 w-3.5 text-slate-400" />
+                    <span>View History & Consistency</span>
+                  </button>
                 </div>
               </div>
 
@@ -332,6 +420,153 @@ export default function HabitsPage() {
         </form>
       </Modal>
 
+      {/* EDIT HABIT MODAL */}
+      {editHabit && (
+        <Modal
+          isOpen={!!editHabit}
+          onClose={() => setEditHabit(null)}
+          title="Edit Habit"
+          description={`Update details and cadence for "${editHabit.title}".`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditHabit(null)}>
+                Cancel
+              </Button>
+              <Button loading={savingEdit} onClick={handleSaveEdit}>
+                Save Changes
+              </Button>
+            </>
+          }
+        >
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            <Input
+              label="Habit Title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              required
+            />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Frequency
+              </label>
+              <select
+                value={editFrequency}
+                onChange={(e) => setEditFrequency(e.target.value as any)}
+                className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-sky-500 focus:outline-none"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekdays">Weekdays Only</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* HABIT HISTORY & CONSISTENCY MODAL */}
+      {historyHabit && (
+        <Modal
+          isOpen={!!historyHabit}
+          onClose={() => setHistoryHabit(null)}
+          title={`Consistency & History`}
+          description={`Performance analytics and check-in timeline for "${historyHabit.title}".`}
+          footer={
+            <Button size="sm" onClick={() => setHistoryHabit(null)}>
+              Close
+            </Button>
+          }
+        >
+          {loadingHistory ? (
+            <div className="py-8 text-center text-xs text-slate-400">Loading history...</div>
+          ) : historyData ? (
+            <div className="space-y-4">
+              {/* Stats overview banner */}
+              <div className="grid grid-cols-3 gap-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div className="text-center">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Consistency</span>
+                  <span className="text-base font-bold text-sky-600">
+                    {historyData.statistics?.consistency_rate || 0}%
+                  </span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Current Streak</span>
+                  <span className="text-base font-bold text-amber-600">
+                    {historyData.statistics?.current_streak || 0} d
+                  </span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Checked</span>
+                  <span className="text-base font-bold text-emerald-600">
+                    {historyData.statistics?.total_completions || 0}
+                  </span>
+                </div>
+              </div>
+
+              {/* Logs Timeline */}
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                  Recent Check-ins ({historyData.logs?.length || 0})
+                </span>
+                {historyData.logs && historyData.logs.length > 0 ? (
+                  historyData.logs.slice().reverse().map((log: any) => (
+                    <div
+                      key={log.id}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 bg-white text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="font-semibold text-slate-800">
+                          {new Date(log.log_date).toLocaleDateString(undefined, {
+                            weekday: 'short',
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                      <div>
+                        {log.is_completed ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                            <Check className="h-3 w-3" /> Completed
+                          </span>
+                        ) : log.is_frozen ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-md">
+                            <Shield className="h-3 w-3" /> Shielded
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md">
+                            Missed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 italic py-2">
+                    No check-ins recorded yet. Check-in daily to build your activity history.
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 italic py-4">Could not load habit history.</p>
+          )}
+        </Modal>
+      )}
+
       {/* USE FREEZE TOKEN MODAL */}
       {isFreezeModalOpen && (
         <Modal
@@ -349,6 +584,12 @@ export default function HabitsPage() {
           }
         >
           <div className="space-y-4">
+            {freezeError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{freezeError}</span>
+              </div>
+            )}
             <p className="text-xs text-slate-600">
               Applying a freeze shield consumes 1 shield token and preserves your active streak on the chosen date.
             </p>

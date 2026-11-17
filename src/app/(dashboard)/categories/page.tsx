@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Tags, Plus, Trash2, Folder } from 'lucide-react';
+import { Tags, Plus, Trash2, Folder, Edit2 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -17,6 +17,13 @@ export default function CategoriesPage() {
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [catName, setCatName] = useState('');
   const [catColor, setCatColor] = useState('#0284c7');
+  const [savingCat, setSavingCat] = useState(false);
+
+  // Edit Category Modal
+  const [editCategory, setEditCategory] = useState<any | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [editCatColor, setEditCatColor] = useState('#0284c7');
+  const [savingEditCat, setSavingEditCat] = useState(false);
 
   // Tag Form
   const [tagName, setTagName] = useState('');
@@ -48,6 +55,7 @@ export default function CategoriesPage() {
     if (!catName.trim()) return;
 
     try {
+      setSavingCat(true);
       const response = await api.post('/categories', {
         name: catName,
         color: catColor,
@@ -56,9 +64,44 @@ export default function CategoriesPage() {
         setIsCatModalOpen(false);
         setCatName('');
         fetchData();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('tuntas:categories-changed'));
+        }
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setSavingCat(false);
+    }
+  };
+
+  const openEditCatModal = (cat: any) => {
+    setEditCategory(cat);
+    setEditCatName(cat.name);
+    setEditCatColor(cat.color || '#0284c7');
+  };
+
+  const handleUpdateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editCategory || !editCatName.trim()) return;
+
+    try {
+      setSavingEditCat(true);
+      const response = await api.put(`/categories/${editCategory.id}`, {
+        name: editCatName,
+        color: editCatColor,
+      });
+      if (response.data?.success) {
+        setEditCategory(null);
+        fetchData();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('tuntas:categories-changed'));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingEditCat(false);
     }
   };
 
@@ -67,6 +110,9 @@ export default function CategoriesPage() {
     try {
       await api.delete(`/categories/${id}`);
       setCategories((prev) => prev.filter((c) => c.id !== id));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('tuntas:categories-changed'));
+      }
     } catch (err) {
       console.error(err);
     }
@@ -150,13 +196,30 @@ export default function CategoriesPage() {
                       style={{ backgroundColor: cat.color || '#0284c7' }}
                     />
                     <span className="text-xs font-bold text-slate-800">{cat.name}</span>
+                    {typeof cat.tasks_count === 'number' && (
+                      <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                        {cat.tasks_count} tasks
+                      </span>
+                    )}
                   </div>
-                  <button
-                    onClick={() => handleDeleteCategory(cat.id)}
-                    className="p-1 text-slate-300 hover:text-red-500 transition"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEditCatModal(cat)}
+                      className="p-1 text-slate-300 hover:text-sky-600 transition cursor-pointer"
+                      title="Edit Category"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(cat.id)}
+                      className="p-1 text-slate-300 hover:text-rose-500 transition cursor-pointer"
+                      title="Delete Category"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -224,7 +287,9 @@ export default function CategoriesPage() {
             <Button variant="secondary" onClick={() => setIsCatModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateCategory}>Create Category</Button>
+            <Button loading={savingCat} onClick={handleCreateCategory}>
+              Create Category
+            </Button>
           </>
         }
       >
@@ -253,6 +318,50 @@ export default function CategoriesPage() {
           </div>
         </form>
       </Modal>
+
+      {/* EDIT CATEGORY MODAL */}
+      {editCategory && (
+        <Modal
+          isOpen={!!editCategory}
+          onClose={() => setEditCategory(null)}
+          title="Edit Category"
+          description={`Update name and accent color for "${editCategory.name}".`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEditCategory(null)}>
+                Cancel
+              </Button>
+              <Button loading={savingEditCat} onClick={handleUpdateCategory}>
+                Save Changes
+              </Button>
+            </>
+          }
+        >
+          <form onSubmit={handleUpdateCategory} className="space-y-4">
+            <Input
+              label="Category Name"
+              value={editCatName}
+              onChange={(e) => setEditCatName(e.target.value)}
+              required
+            />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Accent Color
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={editCatColor}
+                  onChange={(e) => setEditCatColor(e.target.value)}
+                  className="h-10 w-14 rounded-lg border border-slate-200 cursor-pointer p-0.5"
+                />
+                <span className="text-xs font-mono text-slate-500">{editCatColor}</span>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
