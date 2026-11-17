@@ -43,6 +43,30 @@ class ActivityAndNavigationTest extends TestCase
         $response->assertStatus(401);
     }
 
+    public function test_login_with_unregistered_email_prompts_account_creation(): void
+    {
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => 'unregistered_user@tuntas.test',
+            'password' => 'AnyPassword123!',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['email'])
+            ->assertJsonPath('errors.email.0', 'Email belum terdaftar. Silakan buat akun terlebih dahulu.');
+    }
+
+    public function test_login_with_wrong_password_shows_password_error(): void
+    {
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => $this->user->email,
+            'password' => 'WrongPassword!',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['password'])
+            ->assertJsonPath('errors.password.0', 'Kata sandi yang Anda masukkan salah. Silakan coba lagi.');
+    }
+
     public function test_activity_endpoint_returns_user_audit_logs_with_proper_isolation(): void
     {
         // 1. Create audit logs for target user

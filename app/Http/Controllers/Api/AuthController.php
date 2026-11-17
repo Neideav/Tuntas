@@ -65,9 +65,15 @@ class AuthController extends Controller
 
         $user = User::where('email', $credentials['email'])->first();
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+        if (! $user) {
             throw ValidationException::withMessages([
-                'email' => ['Kombinasi email dan kata sandi salah.'],
+                'email' => ['Email belum terdaftar. Silakan buat akun terlebih dahulu.'],
+            ]);
+        }
+
+        if (! Hash::check($credentials['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'password' => ['Kata sandi yang Anda masukkan salah. Silakan coba lagi.'],
             ]);
         }
 

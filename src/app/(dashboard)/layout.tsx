@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import api from '@/lib/api';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
 import { MotionProvider, PageTransition } from '@/components/animations';
@@ -35,9 +36,25 @@ export default function DashboardLayout({
     const token = localStorage.getItem('tuntas_token');
     if (!token) {
       router.replace('/login');
-    } else {
-      setIsAuthenticated(true);
+      return;
     }
+
+    // Verifikasi validitas sesi token dengan backend
+    api.get('/auth/me')
+      .then((res) => {
+        if (res.data?.success) {
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem('tuntas_token');
+          localStorage.removeItem('tuntas_user');
+          router.replace('/login');
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('tuntas_token');
+        localStorage.removeItem('tuntas_user');
+        router.replace('/login');
+      });
   }, [router]);
 
   if (isAuthenticated === null) {

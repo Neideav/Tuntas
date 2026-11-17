@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api, { extractApiErrorMessage } from '@/lib/api';
@@ -17,12 +17,27 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const emailParam = params.get('email');
+      if (emailParam) {
+        setEmail(emailParam);
+      }
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (password !== passwordConfirmation) {
-      setError('Passwords do not match.');
+      setError('Konfirmasi kata sandi tidak cocok.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Kata sandi harus minimal 8 karakter.');
       return;
     }
 
@@ -42,7 +57,7 @@ export default function RegisterPage() {
         router.push('/dashboard');
       }
     } catch (err: unknown) {
-      setError(extractApiErrorMessage(err, 'Registration failed. Please check your details.'));
+      setError(extractApiErrorMessage(err, 'Pendaftaran gagal. Periksa kembali data yang dimasukkan.'));
     } finally {
       setLoading(false);
     }
@@ -57,15 +72,15 @@ export default function RegisterPage() {
             T
           </div>
           <h1 className="mt-4 text-xl font-bold text-slate-900 tracking-tight">
-            Create your account
+            Buat Akun Tuntas
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            Join Tuntas to manage projects, tasks, habits, and examinations
+            Daftar untuk mengelola tugas, proyek, kebiasaan harian, dan ujian akademik
           </p>
         </div>
 
         {error && (
-          <div className="mb-5 flex items-center gap-2.5 rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs font-semibold text-rose-700">
+          <div className="mb-5 flex items-center gap-2.5 rounded-xl bg-rose-50 border border-rose-200 p-3.5 text-xs font-semibold text-rose-700">
             <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
             <span>{error}</span>
           </div>
@@ -73,7 +88,7 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="Full Name"
+            label="Nama Lengkap"
             placeholder="e.g. Budi Santoso"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -81,16 +96,16 @@ export default function RegisterPage() {
           />
 
           <Input
-            label="Email Address"
+            label="Alamat Email"
             type="email"
-            placeholder="name@company.com"
+            placeholder="nama@email.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
 
           <Input
-            label="Password"
+            label="Kata Sandi (Minimal 8 karakter)"
             type="password"
             placeholder="••••••••"
             value={password}
@@ -99,7 +114,7 @@ export default function RegisterPage() {
           />
 
           <Input
-            label="Confirm Password"
+            label="Konfirmasi Kata Sandi"
             type="password"
             placeholder="••••••••"
             value={passwordConfirmation}
@@ -108,14 +123,14 @@ export default function RegisterPage() {
           />
 
           <Button type="submit" loading={loading} className="w-full font-bold">
-            Create Account
+            Daftar Akun Baru
           </Button>
         </form>
 
         <p className="mt-6 text-center text-xs text-slate-500">
-          Already have an account?{' '}
-          <Link href="/login" className="font-bold text-sky-600 hover:text-sky-700">
-            Log in
+          Sudah memiliki akun?{' '}
+          <Link href="/login" className="font-bold text-sky-600 hover:text-sky-700 underline">
+            Masuk di sini
           </Link>
         </p>
       </div>

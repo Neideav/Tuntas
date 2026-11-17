@@ -7,19 +7,15 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem('tuntas_token');
-    if (token) {
-      router.replace('/dashboard');
-    } else {
-      router.replace('/login');
-    }
+    // Saat membuka web, selalu arahkan pengguna ke halaman login terlebih dahulu
+    router.replace('/login');
   }, [router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#090d16]">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-cyan-400 border-t-transparent" />
-        <p className="font-mono text-sm text-cyan-400">Loading Tuntas System...</p>
+    <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
+        <p className="text-xs font-semibold text-slate-500">Mengarahkan ke halaman login...</p>
       </div>
     </div>
   );
