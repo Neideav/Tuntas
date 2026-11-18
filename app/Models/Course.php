@@ -16,6 +16,10 @@ class Course extends Model
         'title',
         'code',
         'description',
+        'overview',
+        'learning_objectives',
+        'estimated_duration',
+        'status',
         'color',
         'is_published',
         'progress',
@@ -24,6 +28,8 @@ class Course extends Model
     protected $casts = [
         'is_published' => 'boolean',
         'progress' => 'integer',
+        'learning_objectives' => 'array',
+        'estimated_duration' => 'integer',
     ];
 
     public function user()
@@ -53,12 +59,24 @@ class Course extends Model
 
     public function recalculateProgress(): int
     {
+        $modules = $this->modules()->get();
+        if ($modules->isEmpty()) {
+            $this->update(['progress' => 0]);
+            return 0;
+        }
+
+        // Recalculate each module's progress
+        foreach ($modules as $mod) {
+            $mod->recalculateProgress();
+        }
+
         $lessons = LearningLesson::whereHas('module', function ($q) {
             $q->where('course_id', $this->id);
         })->get();
 
         if ($lessons->isEmpty()) {
-            return $this->progress;
+            $this->update(['progress' => 0]);
+            return 0;
         }
 
         $completed = $lessons->where('is_completed', true)->count();
@@ -67,4 +85,3 @@ class Course extends Model
         return $progress;
     }
 }
-

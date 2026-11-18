@@ -18,6 +18,10 @@ class ExamBlueprint extends Model
         'instructions',
         'duration_minutes',
         'passing_score',
+        'allow_partial_scoring',
+        'negative_marking',
+        'sections',
+        'rubrics',
         'shuffle_questions',
         'shuffle_options',
         'max_attempts',
@@ -29,6 +33,10 @@ class ExamBlueprint extends Model
     protected $casts = [
         'duration_minutes' => 'integer',
         'passing_score' => 'float',
+        'allow_partial_scoring' => 'boolean',
+        'negative_marking' => 'float',
+        'sections' => 'array',
+        'rubrics' => 'array',
         'shuffle_questions' => 'boolean',
         'shuffle_options' => 'boolean',
         'max_attempts' => 'integer',
@@ -59,4 +67,3 @@ class ExamBlueprint extends Model
         return $this->hasMany(ExamAttempt::class);
     }
 }
-

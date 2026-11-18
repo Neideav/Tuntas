@@ -15,13 +15,22 @@ class LearningSession extends Model
         'lesson_id',
         'topic',
         'duration_minutes',
+        'started_at',
+        'ended_at',
+        'paused_at',
+        'status',
+        'accumulated_seconds',
         'notes',
         'session_date',
     ];
 
     protected $casts = [
         'duration_minutes' => 'integer',
+        'accumulated_seconds' => 'integer',
         'session_date' => 'date',
+        'started_at' => 'datetime',
+        'ended_at' => 'datetime',
+        'paused_at' => 'datetime',
     ];
 
     public function user()
@@ -39,4 +48,3 @@ class LearningSession extends Model
         return $this->belongsTo(LearningLesson::class);
     }
 }
-

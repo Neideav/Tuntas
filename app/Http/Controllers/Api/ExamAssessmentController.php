@@ -8,6 +8,7 @@ use App\Models\ExamBlueprint;
 use App\Models\Question;
 use App\Models\QuestionBank;
 use App\Services\ExaminationAssessmentService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -247,6 +248,10 @@ class ExamAssessmentController extends Controller
             ],
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
+            'allow_partial_scoring' => 'nullable|boolean',
+            'negative_marking' => 'nullable|numeric|min:0',
+            'sections' => 'nullable|array',
+            'rubrics' => 'nullable|array',
             'question_ids' => 'nullable|array',
             'question_ids.*' => 'exists:questions,id',
         ]);
@@ -281,6 +286,10 @@ class ExamAssessmentController extends Controller
                 'max_attempts' => $validated['max_attempts'] ?? 1,
                 'starts_at' => $validated['starts_at'] ?? null,
                 'ends_at' => $validated['ends_at'] ?? null,
+                'allow_partial_scoring' => $validated['allow_partial_scoring'] ?? true,
+                'negative_marking' => $validated['negative_marking'] ?? 0.0,
+                'sections' => $validated['sections'] ?? null,
+                'rubrics' => $validated['rubrics'] ?? null,
                 'is_published' => true,
             ]);
 
@@ -364,6 +373,10 @@ class ExamAssessmentController extends Controller
             ],
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
+            'allow_partial_scoring' => 'nullable|boolean',
+            'negative_marking' => 'nullable|numeric|min:0',
+            'sections' => 'nullable|array',
+            'rubrics' => 'nullable|array',
             'is_published' => 'nullable|boolean',
             'question_ids' => 'nullable|array',
             'question_ids.*' => 'exists:questions,id',
@@ -491,9 +504,15 @@ class ExamAssessmentController extends Controller
 
         $attempt->load(['blueprint', 'answers']);
 
+        $remainingSeconds = max(0, Carbon::now()->diffInSeconds($attempt->expires_at, false));
+
+        $attemptData = $attempt->toArray();
+        $attemptData['server_time'] = Carbon::now()->toIso8601String();
+        $attemptData['remaining_seconds'] = $remainingSeconds;
+
         return response()->json([
             'success' => true,
-            'data' => $attempt,
+            'data' => $attemptData,
         ]);
     }
 
@@ -504,14 +523,20 @@ class ExamAssessmentController extends Controller
         }
 
         $validated = $request->validate([
-            'answers' => 'required|array',
+            'answers' => 'nullable|array',
             'answers.*.question_id' => 'required|integer',
             'answers.*.selected_option_ids' => 'nullable|array',
             'answers.*.text_response' => 'nullable|string',
+            'flagged_question_ids' => 'nullable|array',
+            'flagged_question_ids.*' => 'integer',
         ]);
 
         try {
-            $result = $this->assessmentService->syncAnswers($attempt, $validated['answers']);
+            $result = $this->assessmentService->syncAnswers(
+                $attempt,
+                $validated['answers'] ?? [],
+                $validated['flagged_question_ids'] ?? []
+            );
             return response()->json([
                 'success' => true,
                 'message' => 'Answers synced successfully',

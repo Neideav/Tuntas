@@ -136,6 +136,11 @@ Route::prefix('v1')->group(function () {
         Route::put('lessons/{lesson}', [LearningController::class, 'lessonsUpdate']);
         Route::delete('lessons/{lesson}', [LearningController::class, 'lessonsDestroy']);
         Route::patch('lessons/{lesson}/toggle', [LearningController::class, 'lessonsToggle']);
+        Route::get('learning-sessions/active', [LearningController::class, 'sessionsActive']);
+        Route::post('learning-sessions/start', [LearningController::class, 'sessionsStart']);
+        Route::post('learning-sessions/{session}/pause', [LearningController::class, 'sessionsPause']);
+        Route::post('learning-sessions/{session}/resume', [LearningController::class, 'sessionsResume']);
+        Route::post('learning-sessions/{session}/complete', [LearningController::class, 'sessionsComplete']);
         Route::get('learning-sessions', [LearningController::class, 'sessionsIndex']);
         Route::post('learning-sessions', [LearningController::class, 'sessionsStore']);
         Route::get('learning-analytics', [LearningController::class, 'analytics']);

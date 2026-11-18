@@ -39,6 +39,10 @@ class LearningController extends Controller
             'title' => 'required|string|max:255',
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
+            'overview' => 'nullable|string',
+            'learning_objectives' => 'nullable|array',
+            'estimated_duration' => 'nullable|string|max:100',
+            'status' => 'nullable|in:draft,published,archived',
             'category_id' => [
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
@@ -49,6 +53,7 @@ class LearningController extends Controller
         $course = Course::create(array_merge($validated, [
             'user_id' => $request->user()->id,
             'color' => $validated['color'] ?? '#3b82f6',
+            'status' => $validated['status'] ?? 'draft',
             'progress' => 0,
         ]));
 
@@ -85,6 +90,10 @@ class LearningController extends Controller
             'title' => 'sometimes|string|max:255',
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
+            'overview' => 'nullable|string',
+            'learning_objectives' => 'nullable|array',
+            'estimated_duration' => 'nullable|string|max:100',
+            'status' => 'nullable|in:draft,published,archived',
             'category_id' => [
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
@@ -125,10 +134,18 @@ class LearningController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'order' => 'nullable|integer',
+            'prerequisite_module_id' => [
+                'nullable',
+                Rule::exists('learning_modules', 'id')->where(function ($q) use ($course) {
+                    $q->where('course_id', $course->id);
+                }),
+            ],
         ]);
 
         $maxOrder = $course->modules()->max('order') ?? 0;
@@ -136,6 +153,9 @@ class LearningController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'order' => $validated['order'] ?? ($maxOrder + 1),
+            'prerequisite_module_id' => $validated['prerequisite_module_id'] ?? null,
+            'is_completed' => false,
+            'progress' => 0,
         ]);
 
         return response()->json([
@@ -151,10 +171,18 @@ class LearningController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
+        $courseId = $module->course_id;
+
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
             'order' => 'nullable|integer',
+            'prerequisite_module_id' => [
+                'nullable',
+                Rule::exists('learning_modules', 'id')->where(function ($q) use ($courseId, $module) {
+                    $q->where('course_id', $courseId)->where('id', '!=', $module->id);
+                }),
+            ],
         ]);
 
         $module->update($validated);
@@ -197,6 +225,10 @@ class LearningController extends Controller
             'title' => 'required|string|max:255',
             'content' => 'nullable|string',
             'resource_url' => 'nullable|string|max:500',
+            'video_url' => 'nullable|string|max:500',
+            'attachment_url' => 'nullable|string|max:500',
+            'lesson_type' => 'nullable|in:text,video,quiz,assignment',
+            'notes' => 'nullable|string',
             'duration_minutes' => 'nullable|integer|min:1',
             'order' => 'nullable|integer',
         ]);
@@ -206,8 +238,13 @@ class LearningController extends Controller
             'title' => $validated['title'],
             'content' => $validated['content'] ?? null,
             'resource_url' => $validated['resource_url'] ?? null,
+            'video_url' => $validated['video_url'] ?? null,
+            'attachment_url' => $validated['attachment_url'] ?? null,
+            'lesson_type' => $validated['lesson_type'] ?? 'text',
+            'notes' => $validated['notes'] ?? null,
             'duration_minutes' => $validated['duration_minutes'] ?? 15,
             'order' => $validated['order'] ?? ($maxOrder + 1),
+            'is_completed' => false,
         ]);
 
         $module->course->recalculateProgress();
@@ -229,6 +266,10 @@ class LearningController extends Controller
             'title' => 'sometimes|string|max:255',
             'content' => 'nullable|string',
             'resource_url' => 'nullable|string|max:500',
+            'video_url' => 'nullable|string|max:500',
+            'attachment_url' => 'nullable|string|max:500',
+            'lesson_type' => 'nullable|in:text,video,quiz,assignment',
+            'notes' => 'nullable|string',
             'duration_minutes' => 'nullable|integer|min:1',
             'order' => 'nullable|integer',
         ]);
@@ -289,19 +330,166 @@ class LearningController extends Controller
     }
 
     // ==========================================
-    // Learning Sessions
+    // Learning Sessions (Study Timer & History)
     // ==========================================
     public function sessionsIndex(Request $request)
     {
         $sessions = LearningSession::where('user_id', $request->user()->id)
             ->with(['course', 'lesson'])
             ->orderBy('session_date', 'desc')
+            ->orderBy('id', 'desc')
             ->limit(50)
             ->get();
 
         return response()->json([
             'success' => true,
             'data' => $sessions,
+        ]);
+    }
+
+    public function sessionsActive(Request $request)
+    {
+        $session = LearningSession::where('user_id', $request->user()->id)
+            ->whereIn('status', ['active', 'paused'])
+            ->with(['course', 'lesson'])
+            ->latest('id')
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'data' => $session,
+        ]);
+    }
+
+    public function sessionsStart(Request $request)
+    {
+        $userId = $request->user()->id;
+
+        $validated = $request->validate([
+            'topic' => 'required|string|max:255',
+            'course_id' => [
+                'nullable',
+                Rule::exists('courses', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
+            'lesson_id' => [
+                'nullable',
+                Rule::exists('learning_lessons', 'id')->where(function ($query) use ($userId) {
+                    $query->whereIn('module_id', function ($sub) use ($userId) {
+                        $sub->select('learning_modules.id')
+                            ->from('learning_modules')
+                            ->join('courses', 'courses.id', '=', 'learning_modules.course_id')
+                            ->where('courses.user_id', $userId);
+                    });
+                }),
+            ],
+            'notes' => 'nullable|string',
+        ]);
+
+        // Auto-pause any existing active sessions to prevent duplicate timer tracking
+        $activeSessions = LearningSession::where('user_id', $userId)
+            ->where('status', 'active')
+            ->get();
+
+        $now = Carbon::now();
+        foreach ($activeSessions as $act) {
+            $elapsed = $act->started_at ? max(0, $now->diffInSeconds($act->started_at)) : 0;
+            $act->update([
+                'status' => 'paused',
+                'paused_at' => $now,
+                'accumulated_seconds' => (int) $act->accumulated_seconds + $elapsed,
+            ]);
+        }
+
+        $session = LearningSession::create([
+            'user_id' => $userId,
+            'topic' => $validated['topic'],
+            'course_id' => $validated['course_id'] ?? null,
+            'lesson_id' => $validated['lesson_id'] ?? null,
+            'notes' => $validated['notes'] ?? null,
+            'session_date' => Carbon::today()->toDateString(),
+            'started_at' => $now,
+            'duration_minutes' => 0,
+            'accumulated_seconds' => 0,
+            'status' => 'active',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Study session started',
+            'data' => $session->load(['course', 'lesson']),
+        ], 201);
+    }
+
+    public function sessionsPause(Request $request, LearningSession $session)
+    {
+        if ($session->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        if ($session->status === 'active') {
+            $now = Carbon::now();
+            $elapsed = $session->started_at ? max(0, $now->diffInSeconds($session->started_at)) : 0;
+            $session->update([
+                'status' => 'paused',
+                'paused_at' => $now,
+                'accumulated_seconds' => (int) $session->accumulated_seconds + $elapsed,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Study session paused',
+            'data' => $session->fresh(['course', 'lesson']),
+        ]);
+    }
+
+    public function sessionsResume(Request $request, LearningSession $session)
+    {
+        if ($session->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        if ($session->status === 'paused') {
+            $session->update([
+                'status' => 'active',
+                'started_at' => Carbon::now(),
+                'paused_at' => null,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Study session resumed',
+            'data' => $session->fresh(['course', 'lesson']),
+        ]);
+    }
+
+    public function sessionsComplete(Request $request, LearningSession $session)
+    {
+        if ($session->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $now = Carbon::now();
+        $totalSeconds = (int) $session->accumulated_seconds;
+        if ($session->status === 'active' && $session->started_at) {
+            $totalSeconds += max(0, $now->diffInSeconds($session->started_at));
+        }
+
+        $durationMinutes = max(1, (int) round($totalSeconds / 60));
+
+        $session->update([
+            'status' => 'completed',
+            'ended_at' => $now,
+            'accumulated_seconds' => $totalSeconds,
+            'duration_minutes' => $durationMinutes,
+            'notes' => $request->input('notes', $session->notes),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Study session completed and recorded',
+            'data' => $session->fresh(['course', 'lesson']),
         ]);
     }
 
@@ -333,6 +521,8 @@ class LearningController extends Controller
 
         $session = LearningSession::create(array_merge($validated, [
             'user_id' => $request->user()->id,
+            'status' => 'completed',
+            'accumulated_seconds' => $validated['duration_minutes'] * 60,
         ]));
 
         return response()->json([

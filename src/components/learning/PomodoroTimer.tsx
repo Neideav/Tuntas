@@ -41,11 +41,12 @@ export function PomodoroTimer({ courses, onSessionSaved }: PomodoroTimerProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [savingSession, setSavingSession] = useState(false);
   const [completedMessage, setCompletedMessage] = useState<string | null>(null);
+  const [activeBackendSessionId, setActiveBackendSessionId] = useState<number | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const endTimeRef = useRef<number | null>(null);
 
-  // Initialize and restore state from localStorage
+  // Initialize and restore state from localStorage & backend active session
   useEffect(() => {
     try {
       const savedCount = localStorage.getItem('tuntas_pomo_count');
@@ -61,7 +62,31 @@ export function PomodoroTimer({ courses, onSessionSaved }: PomodoroTimerProps) {
     } catch {
       // ignore storage errors
     }
-  }, []);
+
+    // Recover active in-flight session from backend
+    api.get('/learning-sessions/active').then((res) => {
+      if (res.data?.success && res.data.data) {
+        const s = res.data.data;
+        setActiveBackendSessionId(s.id);
+        if (s.course_id) setSelectedCourseId(s.course_id);
+        if (s.topic) setSessionTopic(s.topic);
+        const accumulated = s.accumulated_seconds || 0;
+        let elapsed = accumulated;
+        if (s.status === 'active' && s.started_at) {
+          elapsed += Math.max(0, Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000));
+        }
+        const totalSec = focusDuration * 60;
+        const remain = Math.max(0, totalSec - elapsed);
+        setTimeLeft(remain);
+        if (s.status === 'active' && remain > 0) {
+          endTimeRef.current = Date.now() + remain * 1000;
+          setIsActive(true);
+        } else {
+          setIsActive(false);
+        }
+      }
+    }).catch(() => {});
+  }, [focusDuration]);
 
   const getDurationForMode = (m: TimerMode) => {
     switch (m) {
@@ -109,20 +134,59 @@ export function PomodoroTimer({ courses, onSessionSaved }: PomodoroTimerProps) {
     };
   }, [isActive, mode]);
 
-  const handleTogglePlay = () => {
+  const handleTogglePlay = async () => {
     if (!isActive) {
       endTimeRef.current = Date.now() + timeLeft * 1000;
       setIsActive(true);
+
+      if (mode === 'focus') {
+        try {
+          if (activeBackendSessionId) {
+            await api.post(`/learning-sessions/${activeBackendSessionId}/resume`);
+          } else {
+            const course = courses.find((c) => c.id === selectedCourseId);
+            const topic = sessionTopic.trim() || (course ? `Study: ${course.title}` : 'Pomodoro Focus Session');
+            const res = await api.post('/learning-sessions/start', {
+              topic,
+              course_id: selectedCourseId || null,
+            });
+            if (res.data?.success && res.data.data?.id) {
+              setActiveBackendSessionId(res.data.data.id);
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
     } else {
       setIsActive(false);
       endTimeRef.current = null;
+      if (activeBackendSessionId && mode === 'focus') {
+        try {
+          await api.post(`/learning-sessions/${activeBackendSessionId}/pause`);
+        } catch (e) {
+          console.error(e);
+        }
+      }
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setIsActive(false);
     endTimeRef.current = null;
     setTimeLeft(getDurationForMode(mode));
+
+    if (activeBackendSessionId && mode === 'focus') {
+      try {
+        await api.post(`/learning-sessions/${activeBackendSessionId}/complete`, {
+          notes: 'Session terminated via reset.',
+        });
+        setActiveBackendSessionId(null);
+        if (onSessionSaved) onSessionSaved();
+      } catch (e) {
+        console.error(e);
+      }
+    }
   };
 
   const handleSkip = () => {
@@ -148,17 +212,24 @@ export function PomodoroTimer({ courses, onSessionSaved }: PomodoroTimerProps) {
       // Persist study session to backend
       setSavingSession(true);
       try {
-        const course = courses.find((c) => c.id === selectedCourseId);
-        const topic = sessionTopic.trim() || (course ? `Study: ${course.title}` : 'Pomodoro Focus Session');
-        const today = new Date().toISOString().split('T')[0];
+        if (activeBackendSessionId) {
+          await api.post(`/learning-sessions/${activeBackendSessionId}/complete`, {
+            notes: `Completed Pomodoro focus session (${focusDuration}m focus). Total focus sessions: ${newCount}.`,
+          });
+          setActiveBackendSessionId(null);
+        } else {
+          const course = courses.find((c) => c.id === selectedCourseId);
+          const topic = sessionTopic.trim() || (course ? `Study: ${course.title}` : 'Pomodoro Focus Session');
+          const today = new Date().toISOString().split('T')[0];
 
-        await api.post('/learning-sessions', {
-          topic,
-          duration_minutes: focusDuration,
-          session_date: today,
-          course_id: selectedCourseId || null,
-          notes: `Completed 1 Pomodoro session (${focusDuration}m focus). Total focus sessions: ${newCount}.`,
-        });
+          await api.post('/learning-sessions', {
+            topic,
+            duration_minutes: focusDuration,
+            session_date: today,
+            course_id: selectedCourseId || null,
+            notes: `Completed 1 Pomodoro session (${focusDuration}m focus). Total focus sessions: ${newCount}.`,
+          });
+        }
 
         setCompletedMessage(`Great job! Completed ${focusDuration}m focus session.`);
         if (onSessionSaved) onSessionSaved();

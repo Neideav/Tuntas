@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 class ExaminationAssessmentService
 {
     /**
-     * Start or resume an examination attempt for a user.
+     * Start or resume an examination attempt for a user with immutable snapshot creation.
      */
     public function startAttempt(ExamBlueprint $blueprint, User $user): ExamAttempt
     {
@@ -42,8 +42,8 @@ class ExaminationAssessmentService
             if (Carbon::now()->lessThanOrEqualTo($activeAttempt->expires_at)) {
                 return $activeAttempt;
             } else {
-                // Mark expired
-                $activeAttempt->update(['status' => 'expired']);
+                // Auto-submit expired attempt cleanly
+                return $this->submitAndGrade($activeAttempt);
             }
         }
 
@@ -99,7 +99,6 @@ class ExaminationAssessmentService
                 'difficulty' => $q->difficulty,
                 'points' => $points,
                 'options' => $options->all(),
-                // explanation is intentionally NOT included in active student snapshot
             ];
 
             // Immutable server-side authoritative snapshot including answer key and explanations
@@ -135,6 +134,7 @@ class ExaminationAssessmentService
             'total_points_possible' => $totalPointsPossible,
             'questions_snapshot' => $snapshot,
             'answer_key_snapshot' => $answerKeySnapshot,
+            'flagged_question_ids' => [],
         ]);
 
         AuditLog::create([
@@ -154,23 +154,24 @@ class ExaminationAssessmentService
     }
 
     /**
-     * Auto-save answers heartbeat during an active attempt with snapshot validation.
+     * Auto-save answers heartbeat during an active attempt with snapshot validation and optional flagged questions.
      */
-    public function syncAnswers(ExamAttempt $attempt, array $answersList): array
+    public function syncAnswers(ExamAttempt $attempt, array $answersList, array $flaggedQuestionIds = []): array
     {
         if ($attempt->status !== 'in_progress') {
             throw new \DomainException("Cannot save answers. Attempt status is {$attempt->status}.");
         }
 
         if (Carbon::now()->greaterThan($attempt->expires_at)) {
-            $attempt->update(['status' => 'expired']);
-            throw new \DomainException('Examination time has expired.');
+            // Automatically submit and grade on expiration
+            $this->submitAndGrade($attempt);
+            throw new \DomainException('Examination time has expired. Attempt has been automatically submitted.');
         }
 
         $snapshot = collect($attempt->questions_snapshot ?? []);
         $snapshotMap = $snapshot->keyBy('id');
 
-        // Strictly validate that all question IDs belong to the active attempt snapshot (BUG-05)
+        // Strictly validate that all question IDs belong to the active attempt snapshot
         $invalidIds = [];
         foreach ($answersList as $answerData) {
             $qId = $answerData['question_id'] ?? null;
@@ -186,7 +187,7 @@ class ExaminationAssessmentService
         }
 
         $savedCount = 0;
-        DB::transaction(function () use ($attempt, $answersList, $snapshotMap, &$savedCount) {
+        DB::transaction(function () use ($attempt, $answersList, $snapshotMap, $flaggedQuestionIds, &$savedCount) {
             foreach ($answersList as $answerData) {
                 $qId = $answerData['question_id'];
                 $qInfo = $snapshotMap->get($qId);
@@ -222,6 +223,10 @@ class ExaminationAssessmentService
                 );
                 $savedCount++;
             }
+
+            if (!empty($flaggedQuestionIds)) {
+                $attempt->update(['flagged_question_ids' => array_values(array_unique($flaggedQuestionIds))]);
+            }
         });
 
         $remainingSeconds = max(0, Carbon::now()->diffInSeconds($attempt->expires_at, false));
@@ -230,22 +235,30 @@ class ExaminationAssessmentService
             'saved_count' => $savedCount,
             'server_time' => Carbon::now()->toIso8601String(),
             'remaining_seconds' => $remainingSeconds,
+            'flagged_question_ids' => $attempt->fresh()->flagged_question_ids ?? [],
         ];
     }
 
     /**
-     * Submit and evaluate attempt. If essay or code_analysis questions exist, transitions to 'grading' for instructor evaluation.
+     * Submit and evaluate attempt with atomic database lock, partial scoring, and immutable snapshots.
      */
     public function submitAndGrade(ExamAttempt $attempt): ExamAttempt
     {
-        if (in_array($attempt->status, ['completed', 'grading'])) {
-            return $attempt->load('answers');
-        }
-
         return DB::transaction(function () use ($attempt) {
+            // Lock attempt row to prevent duplicate or concurrent submissions
+            $lockedAttempt = ExamAttempt::where('id', $attempt->id)->lockForUpdate()->firstOrFail();
+
+            if (in_array($lockedAttempt->status, ['completed', 'grading', 'submitted'])) {
+                return $lockedAttempt->load('answers');
+            }
+
+            $blueprint = $lockedAttempt->blueprint;
+            $allowPartial = $blueprint ? (bool) $blueprint->allow_partial_scoring : true;
+            $negativeMarkingPenalty = $blueprint ? (float) $blueprint->negative_marking : 0.0;
+
             $totalPointsEarned = 0.0;
-            $snapshot = $attempt->questions_snapshot ?? [];
-            $keySnapshotMap = collect($attempt->answer_key_snapshot ?? [])->keyBy('id');
+            $snapshot = $lockedAttempt->questions_snapshot ?? [];
+            $keySnapshotMap = collect($lockedAttempt->answer_key_snapshot ?? [])->keyBy('id');
             $hasPendingManualReview = false;
 
             foreach ($snapshot as $qData) {
@@ -271,7 +284,7 @@ class ExaminationAssessmentService
                     }
                 }
 
-                $answer = ExamAnswer::where('exam_attempt_id', $attempt->id)
+                $answer = ExamAnswer::where('exam_attempt_id', $lockedAttempt->id)
                     ->where('question_id', $qId)
                     ->first();
 
@@ -309,6 +322,18 @@ class ExaminationAssessmentService
                         if ($selected === $correctOptIds) {
                             $isCorrect = true;
                             $awardedPoints = $pointsPossible;
+                        } elseif ($allowPartial && !empty($correctOptIds)) {
+                            // Partial scoring calculation
+                            $totalCorrectOptions = count($correctOptIds);
+                            $correctSelected = count(array_intersect($selected, $correctOptIds));
+                            $incorrectSelected = count(array_diff($selected, $correctOptIds));
+
+                            $penalty = ($negativeMarkingPenalty > 0) ? $negativeMarkingPenalty : 0.5;
+                            $netCorrect = max(0.0, $correctSelected - ($incorrectSelected * $penalty));
+                            $ratio = min(1.0, $netCorrect / $totalCorrectOptions);
+
+                            $awardedPoints = round($ratio * $pointsPossible, 2);
+                            $isCorrect = ($awardedPoints >= $pointsPossible);
                         }
                     } elseif ($qType === 'short_answer') {
                         $expectedAnswers = $authOptions
@@ -336,7 +361,7 @@ class ExaminationAssessmentService
                 } elseif (!$answer) {
                     // Blank answer
                     ExamAnswer::create([
-                        'exam_attempt_id' => $attempt->id,
+                        'exam_attempt_id' => $lockedAttempt->id,
                         'question_id' => $qId,
                         'is_correct' => false,
                         'awarded_points' => 0.0,
@@ -346,17 +371,16 @@ class ExaminationAssessmentService
                 $totalPointsEarned += $awardedPoints;
             }
 
-            $scorePercentage = ($attempt->total_points_possible > 0)
-                ? round(($totalPointsEarned / $attempt->total_points_possible) * 100, 2)
+            $scorePercentage = ($lockedAttempt->total_points_possible > 0)
+                ? round(($totalPointsEarned / $lockedAttempt->total_points_possible) * 100, 2)
                 : 0.0;
 
-            $blueprint = $attempt->blueprint;
             $passingScore = $blueprint ? (float) $blueprint->passing_score : 70.0;
             $isPassed = ($scorePercentage >= $passingScore);
 
             $attemptStatus = $hasPendingManualReview ? 'grading' : 'completed';
 
-            $attempt->update([
+            $lockedAttempt->update([
                 'status' => $attemptStatus,
                 'submitted_at' => Carbon::now(),
                 'total_points_earned' => $totalPointsEarned,
@@ -365,21 +389,21 @@ class ExaminationAssessmentService
             ]);
 
             AuditLog::create([
-                'user_id' => $attempt->user_id,
+                'user_id' => $lockedAttempt->user_id,
                 'action' => 'exam.attempt_submitted',
                 'auditable_type' => ExamAttempt::class,
-                'auditable_id' => $attempt->id,
+                'auditable_id' => $lockedAttempt->id,
                 'payload' => [
                     'status' => $attemptStatus,
                     'has_pending_manual_review' => $hasPendingManualReview,
                     'total_points_earned' => $totalPointsEarned,
                     'score_percentage' => $scorePercentage,
-                    'is_passed' => $attempt->is_passed,
+                    'is_passed' => $lockedAttempt->is_passed,
                 ],
                 'created_at' => now(),
             ]);
 
-            return $attempt->fresh(['answers']);
+            return $lockedAttempt->fresh(['answers']);
         });
     }
 
@@ -570,7 +594,7 @@ class ExaminationAssessmentService
     }
 
     /**
-     * Get post-submission detailed review (only after submission or completion).
+     * Get post-submission detailed review (strictly after submission or completion).
      */
     public function getReview(ExamAttempt $attempt, User $user): array
     {

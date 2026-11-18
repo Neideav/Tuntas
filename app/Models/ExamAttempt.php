@@ -27,6 +27,7 @@ class ExamAttempt extends Model
         'is_passed',
         'questions_snapshot',
         'answer_key_snapshot',
+        'flagged_question_ids',
     ];
 
     /**
@@ -47,6 +48,7 @@ class ExamAttempt extends Model
         'is_passed' => 'boolean',
         'questions_snapshot' => 'array',
         'answer_key_snapshot' => 'array',
+        'flagged_question_ids' => 'array',
     ];
 
     public function blueprint()
@@ -61,12 +63,11 @@ class ExamAttempt extends Model
 
     public function answers()
     {
-        return $this->hasMany(ExamAnswer::class);
+        return $this->hasMany(ExamAnswer::class, 'exam_attempt_id');
     }
 
     public function integrityLogs()
     {
-        return $this->hasMany(ExamIntegrityLog::class);
+        return $this->hasMany(ExamIntegrityLog::class, 'exam_attempt_id');
     }
 }
-

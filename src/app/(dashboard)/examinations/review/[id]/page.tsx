@@ -280,6 +280,16 @@ export default function ExamReviewPage({
                   <p className="text-slate-600 leading-relaxed pl-5">{q.explanation}</p>
                 </div>
               )}
+
+              {/* Instructor Evaluation / Rubric Feedback */}
+              {q.evaluator_feedback && (
+                <div className="rounded-xl bg-purple-50 border border-purple-200/80 p-3 text-xs space-y-1">
+                  <span className="font-bold text-purple-900 flex items-center gap-1.5">
+                    <Award className="h-3.5 w-3.5 text-purple-600" /> Instructor Evaluation & Feedback
+                  </span>
+                  <p className="text-purple-800 leading-relaxed pl-5">{q.evaluator_feedback}</p>
+                </div>
+              )}
             </StaggerItem>
           );
         })}

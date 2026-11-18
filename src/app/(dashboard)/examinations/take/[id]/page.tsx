@@ -14,6 +14,8 @@ import {
   Save,
   Check,
   Code,
+  Flag,
+  RotateCcw,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -35,13 +37,14 @@ export default function ExamTakingPage({
 
   // Student Answers Map: { [questionId: number]: { selected_option_ids: number[], text_response: string } }
   const [answers, setAnswers] = useState<Record<number, { selected_option_ids: number[]; text_response: string }>>({});
+  const [flaggedIds, setFlaggedIds] = useState<number[]>([]);
 
   // Countdown Timer
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
   // Proctoring Warnings
   const [integrityAlert, setIntegrityAlert] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'saving' | 'error'>('synced');
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'saving' | 'unsaved' | 'error'>('synced');
 
   // Submit Modal
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
@@ -75,8 +78,15 @@ export default function ExamTakingPage({
             setAnswers(map);
           }
 
-          // Compute remaining seconds
-          if (data.expires_at) {
+          // Populate flagged questions
+          if (Array.isArray(data.flagged_question_ids)) {
+            setFlaggedIds(data.flagged_question_ids);
+          }
+
+          // Authoritative remaining seconds from server if available
+          if (typeof data.remaining_seconds === 'number') {
+            setRemainingSeconds(data.remaining_seconds);
+          } else if (data.expires_at) {
             const diff = Math.max(
               0,
               Math.floor((new Date(data.expires_at).getTime() - new Date().getTime()) / 1000)
@@ -100,6 +110,11 @@ export default function ExamTakingPage({
     answersRef.current = answers;
   }, [answers]);
 
+  const flaggedIdsRef = useRef(flaggedIds);
+  useEffect(() => {
+    flaggedIdsRef.current = flaggedIds;
+  }, [flaggedIds]);
+
   // Sync answers heartbeat
   const syncAnswers = useCallback(async (throwOnError = false): Promise<boolean> => {
     const payload = Object.entries(answersRef.current).map(([qId, val]) => ({
@@ -108,11 +123,12 @@ export default function ExamTakingPage({
       text_response: val.text_response,
     }));
 
-    if (payload.length === 0) return true;
-
     try {
       setSyncStatus('saving');
-      const res = await api.post(`/exam-attempts/${attemptId}/sync`, { answers: payload });
+      const res = await api.post(`/exam-attempts/${attemptId}/sync`, {
+        answers: payload,
+        flagged_question_ids: flaggedIdsRef.current,
+      });
       if (res.data?.success) {
         setSyncStatus('synced');
         if (res.data.data?.remaining_seconds !== undefined) {
@@ -123,10 +139,11 @@ export default function ExamTakingPage({
       if (throwOnError) {
         throw new Error(res.data?.message || 'Gagal menyimpan jawaban ujian.');
       }
+      setSyncStatus('error');
       return false;
     } catch (err: any) {
       if (err.response?.status === 410) {
-        alert('Examination time has expired! Auto-submitting answers...');
+        alert('Waktu ujian telah berakhir! Sistem otomatis mengumpulkan jawaban Anda...');
         router.replace(`/examinations/review/${attemptId}`);
         return false;
       }
@@ -197,7 +214,19 @@ export default function ExamTakingPage({
   const questions = attempt?.questions_snapshot || [];
   const currentQuestion = questions[currentIndex];
 
+  const handleToggleFlag = (questionId: number) => {
+    setFlaggedIds((prev) => {
+      const next = prev.includes(questionId)
+        ? prev.filter((id) => id !== questionId)
+        : [...prev, questionId];
+      flaggedIdsRef.current = next;
+      return next;
+    });
+    setSyncStatus('unsaved');
+  };
+
   const handleSelectOption = (questionId: number, optionId: number, isMultiple = false) => {
+    setSyncStatus('unsaved');
     setAnswers((prev) => {
       const current = prev[questionId] || { selected_option_ids: [], text_response: '' };
       let updatedIds: number[];
@@ -223,6 +252,7 @@ export default function ExamTakingPage({
   };
 
   const handleTextAnswerChange = (questionId: number, text: string) => {
+    setSyncStatus('unsaved');
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -293,9 +323,41 @@ export default function ExamTakingPage({
 
         {/* Sync Status & Server Countdown Timer */}
         <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-            <Save className={`h-3.5 w-3.5 ${syncStatus === 'saving' ? 'animate-spin text-sky-600' : 'text-emerald-500'}`} />
-            <span>{syncStatus === 'saving' ? 'Saving...' : 'Auto-Saved'}</span>
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium">
+            {syncStatus === 'saving' && (
+              <>
+                <Save className="h-3.5 w-3.5 animate-spin text-sky-600" />
+                <span className="text-sky-600 font-semibold">Menyimpan...</span>
+              </>
+            )}
+            {syncStatus === 'synced' && (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="text-emerald-700">Tersimpan</span>
+              </>
+            )}
+            {syncStatus === 'unsaved' && (
+              <button
+                type="button"
+                onClick={() => syncAnswers()}
+                className="flex items-center gap-1.5 text-amber-700 hover:text-amber-800 cursor-pointer"
+                title="Klik untuk simpan sekarang"
+              >
+                <Save className="h-3.5 w-3.5 text-amber-500" />
+                <span>Belum tersimpan</span>
+              </button>
+            )}
+            {syncStatus === 'error' && (
+              <button
+                type="button"
+                onClick={() => syncAnswers()}
+                className="flex items-center gap-1.5 text-rose-700 underline font-bold cursor-pointer"
+                title="Gagal menyimpan. Klik untuk mencoba lagi."
+              >
+                <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                <span>Gagal simpan (Coba lagi)</span>
+              </button>
+            )}
           </div>
 
           {remainingSeconds !== null && (
@@ -345,16 +407,38 @@ export default function ExamTakingPage({
           {/* Question Header & Points */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 font-bold text-xs uppercase tracking-wider">
+              <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-bold text-xs uppercase tracking-wider">
                 Question {currentIndex + 1} of {questions.length}
               </span>
               <span className="text-xs text-slate-400 font-medium">
                 Type: {currentQuestion?.type?.replace(/_/g, ' ')}
               </span>
             </div>
-            <span className="text-xs font-bold text-slate-700">
-              {currentQuestion?.points || 1} Points
-            </span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleToggleFlag(currentQuestion.id)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                  flaggedIds.includes(currentQuestion.id)
+                    ? 'border-amber-400 bg-amber-50 text-amber-800 font-bold shadow-xs'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Flag
+                  className={`h-3.5 w-3.5 ${
+                    flaggedIds.includes(currentQuestion.id)
+                      ? 'fill-amber-500 text-amber-500'
+                      : 'text-slate-400'
+                  }`}
+                />
+                <span>
+                  {flaggedIds.includes(currentQuestion.id) ? 'Ditandai Ragu' : 'Tandai Ragu-ragu'}
+                </span>
+              </button>
+              <span className="text-xs font-bold text-slate-700">
+                {currentQuestion?.points || 1} Points
+              </span>
+            </div>
           </div>
 
           <AnimatePresence mode="wait">
@@ -477,38 +561,51 @@ export default function ExamTakingPage({
                 (answers[q.id]?.selected_option_ids?.length || 0) > 0 ||
                 (answers[q.id]?.text_response?.trim().length || 0) > 0;
               const isCurrent = idx === currentIndex;
+              const isFlagged = flaggedIds.includes(q.id);
+
+              let buttonClass = 'bg-slate-100 text-slate-600 hover:bg-slate-200';
+              if (isCurrent) {
+                buttonClass = 'bg-slate-900 text-white font-bold ring-2 ring-slate-900 ring-offset-1 shadow-sm';
+              } else if (isFlagged) {
+                buttonClass = 'border-2 border-amber-400 bg-amber-50 text-amber-900 font-bold';
+              } else if (isAnswered) {
+                buttonClass = 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-semibold';
+              }
 
               return (
                 <button
                   key={q.id}
                   onClick={() => setCurrentIndex(idx)}
-                  className={`h-9 rounded-xl font-bold text-xs transition flex items-center justify-center ${
-                    isCurrent
-                      ? 'ring-2 ring-sky-500 ring-offset-2 bg-sky-600 text-white'
-                      : isAnswered
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`relative h-9 rounded-xl text-xs transition flex items-center justify-center cursor-pointer ${buttonClass}`}
                 >
                   {idx + 1}
+                  {isFlagged && !isCurrent && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] text-white font-black">
+                      •
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
 
           {/* Palette Legend */}
-          <div className="pt-3 border-t border-slate-100 space-y-1.5 text-[11px] text-slate-500 font-medium">
+          <div className="pt-3 border-t border-slate-100 space-y-2 text-[11px] text-slate-500 font-medium">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-md bg-slate-900" />
+              <span className="font-semibold text-slate-800">Sedang Dikerjakan</span>
+            </div>
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-md bg-emerald-50 border border-emerald-300" />
-              <span>Answered</span>
+              <span>Sudah Dijawab ({answeredCount})</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-md bg-amber-50 border-2 border-amber-400" />
+              <span>Ragu-ragu ({flaggedIds.length})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="h-3 w-3 rounded-md bg-slate-100 border border-slate-300" />
-              <span>Unvisited / Pending</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-md bg-sky-600" />
-              <span>Current Item</span>
+              <span>Belum Dijawab ({questions.length - answeredCount})</span>
             </div>
           </div>
         </div>

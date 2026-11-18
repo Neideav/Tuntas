@@ -34,6 +34,10 @@ interface Lesson {
   title: string;
   content?: string;
   resource_url?: string;
+  video_url?: string;
+  attachment_url?: string;
+  lesson_type?: 'text' | 'video' | 'quiz' | 'assignment';
+  notes?: string;
   duration_minutes: number;
   is_completed: boolean;
   order: number;
@@ -119,8 +123,13 @@ export default function LearningPage() {
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonContent, setLessonContent] = useState('');
   const [lessonResourceUrl, setLessonResourceUrl] = useState('');
+  const [lessonVideoUrl, setLessonVideoUrl] = useState('');
+  const [lessonAttachmentUrl, setLessonAttachmentUrl] = useState('');
+  const [lessonType, setLessonType] = useState<'text' | 'video' | 'quiz' | 'assignment'>('text');
+  const [lessonNotes, setLessonNotes] = useState('');
   const [lessonDuration, setLessonDuration] = useState('20');
   const [savingLesson, setSavingLesson] = useState(false);
+  const [viewingLesson, setViewingLesson] = useState<Lesson | null>(null);
 
   // Session Form
   const [sessionTopic, setSessionTopic] = useState('');
@@ -244,8 +253,12 @@ export default function LearningPage() {
       setSavingLesson(true);
       const res = await api.post(`/modules/${activeLessonModuleId}/lessons`, {
         title: lessonTitle,
-        content: lessonContent,
-        resource_url: lessonResourceUrl,
+        content: lessonContent || null,
+        resource_url: lessonResourceUrl || null,
+        video_url: lessonVideoUrl || null,
+        attachment_url: lessonAttachmentUrl || null,
+        lesson_type: lessonType,
+        notes: lessonNotes || null,
         duration_minutes: parseInt(lessonDuration) || 15,
       });
 
@@ -254,6 +267,10 @@ export default function LearningPage() {
         setLessonTitle('');
         setLessonContent('');
         setLessonResourceUrl('');
+        setLessonVideoUrl('');
+        setLessonAttachmentUrl('');
+        setLessonType('text');
+        setLessonNotes('');
         setLessonDuration('20');
         fetchData();
       }
@@ -486,20 +503,28 @@ export default function LearningPage() {
                                         onChange={() => handleToggleLesson(lesson.id)}
                                         className="h-4 w-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
                                       />
-                                      <span
-                                        className={`font-medium ${
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewingLesson(lesson)}
+                                        className={`font-semibold text-left hover:underline cursor-pointer flex items-center gap-1.5 ${
                                           lesson.is_completed
                                             ? 'line-through text-slate-400'
                                             : 'text-slate-800'
                                         }`}
                                       >
-                                        {lesson.title}
-                                      </span>
+                                        {lesson.lesson_type === 'video' ? (
+                                          <PlayCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                        ) : (
+                                          <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                        )}
+                                        <span>{lesson.title}</span>
+                                      </button>
                                       {lesson.resource_url && (
                                         <a
                                           href={lesson.resource_url}
                                           target="_blank"
                                           rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
                                           className="text-sky-600 hover:text-sky-700 flex items-center gap-1 text-[11px]"
                                         >
                                           <ExternalLink className="h-3 w-3" />
@@ -813,35 +838,184 @@ export default function LearningPage() {
             required
           />
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Lesson Type
+              </label>
+              <select
+                value={lessonType}
+                onChange={(e) => setLessonType(e.target.value as any)}
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-medium text-slate-800"
+              >
+                <option value="text">Structured Reading / Text</option>
+                <option value="video">Video Lecture</option>
+                <option value="quiz">Interactive Quiz</option>
+                <option value="assignment">Assignment</option>
+              </select>
+            </div>
+
+            <Input
+              label="Estimated Duration (Min)"
+              type="number"
+              min={1}
+              value={lessonDuration}
+              onChange={(e) => setLessonDuration(e.target.value)}
+              required
+            />
+          </div>
+
           <Input
-            label="Resource Reference URL (Optional)"
+            label="Video URL (Optional)"
+            placeholder="https://youtube.com/watch?v=... or direct mp4"
+            value={lessonVideoUrl}
+            onChange={(e) => setLessonVideoUrl(e.target.value)}
+          />
+
+          <Input
+            label="Resource Link URL (Optional)"
             placeholder="https://mit.edu/notes/mutex.pdf"
             value={lessonResourceUrl}
             onChange={(e) => setLessonResourceUrl(e.target.value)}
           />
 
           <Input
-            label="Estimated Duration (Minutes)"
-            type="number"
-            min={5}
-            value={lessonDuration}
-            onChange={(e) => setLessonDuration(e.target.value)}
-            required
+            label="Attachment URL (Optional)"
+            placeholder="https://storage.example.com/slides.pdf"
+            value={lessonAttachmentUrl}
+            onChange={(e) => setLessonAttachmentUrl(e.target.value)}
           />
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              Content / Summary
+              Structured Lesson Content
             </label>
             <textarea
               rows={3}
-              placeholder="Key concepts or reading instructions..."
+              placeholder="Lecture notes, reading instructions, or theoretical summary..."
               value={lessonContent}
               onChange={(e) => setLessonContent(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none"
+              className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-slate-900 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Personal Study Notes
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Key takeaways, formulas, or reminders..."
+              value={lessonNotes}
+              onChange={(e) => setLessonNotes(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-slate-900 focus:outline-none"
             />
           </div>
         </form>
+      </Modal>
+
+      {/* VIEW LESSON CONTENT MODAL */}
+      <Modal
+        isOpen={!!viewingLesson}
+        onClose={() => setViewingLesson(null)}
+        title={viewingLesson?.title || 'Lesson Overview'}
+        description={`Estimated Duration: ${viewingLesson?.duration_minutes || 15} minutes • Type: ${viewingLesson?.lesson_type || 'text'}`}
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <Button
+              variant={viewingLesson?.is_completed ? 'secondary' : 'primary'}
+              size="sm"
+              onClick={() => {
+                if (viewingLesson) {
+                  handleToggleLesson(viewingLesson.id);
+                  setViewingLesson({ ...viewingLesson, is_completed: !viewingLesson.is_completed });
+                }
+              }}
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+            >
+              {viewingLesson?.is_completed ? 'Mark as Incomplete' : 'Mark as Completed'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setViewingLesson(null)}>
+              Close
+            </Button>
+          </div>
+        }
+      >
+        {viewingLesson && (
+          <div className="space-y-4 text-xs text-slate-700">
+            {/* Video preview / link if available */}
+            {viewingLesson.video_url && (
+              <div className="p-3 bg-slate-900 rounded-xl text-white space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <PlayCircle className="h-4 w-4 text-rose-400" /> Video Lecture Resource
+                  </span>
+                  <a
+                    href={viewingLesson.video_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-sky-400 hover:underline flex items-center gap-1"
+                  >
+                    Open Link <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+                <p className="text-[11px] text-slate-300 break-all">{viewingLesson.video_url}</p>
+              </div>
+            )}
+
+            {/* Structured Content */}
+            {viewingLesson.content ? (
+              <div className="space-y-1.5">
+                <span className="font-bold text-slate-900 uppercase tracking-wider text-[11px] block">
+                  Lesson Material & Summary:
+                </span>
+                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl leading-relaxed whitespace-pre-wrap">
+                  {viewingLesson.content}
+                </div>
+              </div>
+            ) : (
+              <p className="italic text-slate-400">No written text content provided for this lesson.</p>
+            )}
+
+            {/* Notes */}
+            {viewingLesson.notes && (
+              <div className="space-y-1">
+                <span className="font-bold text-slate-900 uppercase tracking-wider text-[11px] block">
+                  Study Notes:
+                </span>
+                <div className="p-3 bg-amber-50/60 border border-amber-200/60 rounded-xl text-amber-950">
+                  {viewingLesson.notes}
+                </div>
+              </div>
+            )}
+
+            {/* Attachments / References */}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+              {viewingLesson.resource_url && (
+                <a
+                  href={viewingLesson.resource_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 font-semibold flex items-center gap-1.5"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 text-sky-600" />
+                  Reference Resource
+                </a>
+              )}
+              {viewingLesson.attachment_url && (
+                <a
+                  href={viewingLesson.attachment_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 font-semibold flex items-center gap-1.5"
+                >
+                  <FileText className="h-3.5 w-3.5 text-emerald-600" />
+                  Lesson Attachment
+                </a>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* LOG STUDY SESSION MODAL */}
