@@ -1,4 +1,4 @@
-# ⚡ Tuntas — Integrated Productivity, Habit & Examination Platform
+# ⚡ Tuntas — Enterprise-Grade Productivity, LMS & Examination Platform
 
 <p align="center">
   <img src="https://img.shields.io/badge/Architecture-Monorepo-06B6D4?style=for-the-badge&logo=monorepo&logoColor=white" alt="Monorepo" />
@@ -7,12 +7,66 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Laravel-12.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white" alt="Laravel 12" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS v4" />
-  <img src="https://img.shields.io/badge/Tests-35%20Passed%20(270%20Assertions)-emerald?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-79%20Passed%20(702%20Assertions)-emerald?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests" />
 </p>
 
-**Tuntas** is an enterprise-grade, integrated productivity management and examination platform designed to harmonize daily execution, project milestone delivery, habit discipline, continuous learning, and formal assessment into a unified digital workspace.
+**Tuntas** is an enterprise-grade, integrated productivity management, continuous learning, and assessment platform designed to harmonize daily execution, project milestone delivery, habit discipline, deep-focus study, and formal examination into a unified digital workspace.
 
-Engineered with a modern **Monorepo** architecture, Tuntas separates a high-performance **Next.js 15 (React 19, TypeScript, Tailwind CSS v4, Lucide Icons)** frontend from a headless **Laravel 12 RESTful API** backend with multi-tenant data isolation, strict security safeguards, and an autonomous **Dedicated Examination Subsystem**.
+Engineered with a cohesive **Monorepo** architecture, Tuntas pairs a high-performance **Next.js 15 (React 19, TypeScript, Tailwind CSS v4, Motion / Framer Motion, Lucide Icons)** frontend with a headless **Laravel 12 RESTful API** backend featuring strict multi-tenant isolation, immutable examination state snapshotting, deterministic rule-based analytics, and automated multi-domain notification intelligence.
+
+---
+
+## 🗺️ Module Integration Map
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   TUNTAS WORKSPACE                                     │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+          │                                 │                                 │
+          ▼                                 ▼                                 ▼
+┌──────────────────┐              ┌──────────────────┐              ┌──────────────────┐
+│ Task Management  │◄────────────►│Project Management│◄────────────►│ Goal Management  │
+│ • Kanban / Table │  Belongs To  │ • Milestones     │  Linked To   │ • OKR Objectives │
+│ • Recurrence     │              │ • Auto Progress  │              │ • Key Results    │
+│ • Dependencies   │              │ • Health Status  │              │ • Weighted Rollup│
+└─────────┬────────┘              └─────────┬────────┘              └─────────┬────────┘
+          │                                 │                                 │
+          │ Due Dates                       │ Deadlines                       │ Target Dates
+          ▼                                 ▼                                 ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              Unified Calendar & Scheduling                             │
+│                  (Tasks, Projects, Habit Logs, Sessions & Examinations)                │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+          ▲                                 ▲                                 ▲
+          │ Scheduled Exams                 │ Daily Streaks                   │ Focus Sessions
+          │                                 │                                 │
+┌─────────┴────────┐              ┌─────────┴────────┐              ┌─────────┴────────┐
+│   Examination    │              │  Habit Tracking  │              │ Learning (LMS)   │
+│ • Question Banks │              │ • Multi-Freq     │              │ • Course/Lessons │
+│ • Anti-Leak Exam │              │ • Freeze Tokens  │              │ • Study Timer    │
+│ • Auto-Grading   │              │ • Consistency %  │              │ • Active Session │
+└─────────┬────────┘              └─────────┬────────┘              └─────────┬────────┘
+          │                                 │                                 │
+          └────────────────────────┬────────┴─────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        Analytics & Rule-Based Intelligence                             │
+│       • Productivity Analytics (Velocity, Completion Rates, Planned vs Completed)      │
+│       • Learning Analytics (Effort Activity vs Outcome Attainment Separation)          │
+│       • Question Difficulty Distribution (Easy / Medium / Hard Classification)         │
+│       • Transparent Deterministic Insights (Overdue, Slump, Momentum, Near-Goal)       │
+│       • RFC 4180 User-Isolated CSV Export                                              │
+└──────────────────────────────────┬─────────────────────────────────────────────────────┘
+                                   │ Triggers
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                     Automated Multi-Domain Notification Engine                         │
+│ • Lifecycle: In-App, Read, Archive / Unarchive, Category Filters                      │
+│ • Reminders: Tasks (<24h), Projects (<48h), Exams (<48h), Goals (<72h), Habits (Today)│
+│ • Quiet Hours Respect (E.g. 23:00 - 06:00) & 24h-72h Idempotent Deduplication          │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -20,147 +74,214 @@ Engineered with a modern **Monorepo** architecture, Tuntas separates a high-perf
 
 1. **🔐 Authentication & Multi-Tenant Access**:
    - Secure registration, token issuance, session control, and salted password hashing via Laravel Sanctum.
-   - Enforced multi-tenant data isolation (`403 Forbidden` on cross-tenant entity mutations).
+   - Enforced multi-tenant data isolation (`403 Forbidden` on cross-tenant entity access or mutation).
 2. **📊 Personal Command Dashboard**:
-   - Real-time productivity cockpit: today's tasks, active projects, habit check-in widget, OKR snapshot, exam countdown, and 7-day velocity curves.
+   - Real-time productivity cockpit: today's tasks, active projects, habit check-in widget, OKR snapshot, exam countdown, and deterministic rule-based insights banner.
 3. **⚡ Advanced Task Management**:
-   - 4-column Kanban board (`To-Do`, `On Progress`, `In Review`, `Completed`), subtasks progress tracking, priorities (`urgent`, `high`, `medium`, `low`), categories, tags, and auto-spawning recurring tasks (`daily`, `weekly`, `monthly`).
+   - 4 flexible views: **Kanban Board** (with HTML5 Drag-and-Drop and optimistic reordering), **Table**, **List**, and **Timelines**.
+   - Subtasks checklist, priority hierarchy (`urgent`, `high`, `medium`, `low`), categories, tags, task dependencies (`blocked_by` / `blocking`), bulk actions, and auto-spawning recurring tasks (`daily`, `weekly`, `monthly`).
 4. **📁 Strategic Project Management**:
-   - Multi-phase project initiatives with automatic progress percentage rollups calculated deterministically from linked task completions.
-5. **📅 Unified Calendar Aggregator**:
-   - Monthly consolidated agenda mapping task due dates, project deadlines, scheduled examinations, and habit logs.
-6. **🔥 Habit Streak & Freeze Token Engine**:
-   - Daily habit check-ins, continuous streak calculations, all-time best streaks, and redeemable freeze tokens to safeguard streaks against missed days.
-7. **🎯 Goals & OKR Tracking**:
-   - High-level objectives with measurable key results, custom target units, and weighted milestone rollups.
-8. **📚 Dedicated Learning Management System (LMS)**:
-   - Subject and lesson taxonomy with reading resources and a focused Pomodoro study timer that logs study sessions.
-9. **📝 Dedicated Examination Assessment Subsystem**:
-   - Autonomous assessment engine with question banks, multi-type questions (`multiple_choice`, `single_choice`, `true_false`, `short_answer`, `essay`), anti-leak answer sanitization during ongoing attempts, 30s autosync heartbeats, proctoring violation alerts, server auto-grading, and post-exam review guards.
-10. **📈 Productivity & Learning Analytics**:
-    - Velocity curves, priority distributions, study hour tracking, exam pass rates, and grade tier breakdowns ($85-100\%$, $70-84\%$, $50-69\%$, $<50\%$).
-11. **🔔 Automated Notification Hub**:
-    - In-app notification center with an automated scanner checking tasks due in $<24\text{h}$ and exams in $<48\text{h}$ with 1-hour anti-spam duplicate prevention.
-12. **⚙️ Preferences & Settings**:
-    - Timezone configurations (WIB, WITA, WIT, UTC), appearance themes, and profile management.
+   - Multi-phase project initiatives with automatic progress percentage rollups calculated deterministically from linked task completions and milestone deliverables.
+5. **🔥 Habit Streak & Freeze Token Engine**:
+   - Multi-frequency schedules (`daily`, `weekdays`, `weekly`, or custom selected days), numeric and boolean habit measurements, continuous streak calculation, all-time best streaks, and redeemable freeze tokens to safeguard streaks against missed days.
+6. **🎯 Goals & OKR Tracking**:
+   - High-level objectives with measurable key results, custom target units, confidence levels, and weighted milestone rollups linked to operational tasks and projects.
+7. **📚 Dedicated Learning Management System (LMS)**:
+   - Structured Course, Module, and Lesson taxonomy with rich content, resource URLs, study notes, and an active Pomodoro study timer that logs focus study sessions.
+8. **📝 Dedicated Examination Assessment Subsystem**:
+   - Autonomous assessment engine with question banks, multi-type questions (`multiple_choice_single`, `multiple_choice_multiple`, `true_false`, `short_answer`, `essay`), **anti-leak answer sanitization during ongoing attempts**, 30s autosync heartbeats, proctoring violation alerts, server auto-grading with partial scoring, and post-exam review guards.
+9. **📈 Productivity & Learning Analytics**:
+   - Filter by date range (`today`, `this_week`, `this_month`, `last_30_days`, `custom`), strict separation of learning effort (*activity*) vs outcome (*attainment*), exam difficulty classification, and user-isolated CSV data export.
+10. **🔔 Automated Notification Hub**:
+    - Notification preferences per module, quiet hours suppression, and CLI reminder scanner (`php artisan reminders:generate`) with idempotent deduplication.
 
 ---
 
-## 📂 Unified Full-Stack Repository Structure (Like Pasaria)
+## 🛠️ Quickstart & Local Setup Guide
 
-```
-Tuntas/
-├── app/                        # Backend Application: Controllers, Models, Middleware
-│   ├── Http/Controllers/Api/   # REST API Controllers (Tasks, Exams, Analytics, etc.)
-│   └── Models/                 # Eloquent ORM Models (Task, Exam, Habit, Goal, LMS)
-├── bootstrap/                  # Framework bootstrapping & service providers
-├── config/                     # Application configurations (auth, database, sanctum)
-├── database/                   # Migrations, seeders, factories, SQLite storage
-│   └── migrations/             # 8 Idempotent Schema Migrations
-├── docs/                       # Comprehensive Technical Documentation (10 Manuals)
-├── public/                     # Web server root, assets, index.php
-├── resources/                  # Server views, css, js
-├── routes/                     # Application routing (api.php, console.php)
-├── scripts/                    # DevOps scripts (diagnose.sh, auto-deploy.sh)
-├── src/                        # Frontend Application (Next.js 15, React 19, Tailwind CSS v4)
-│   ├── app/                    # App Router ((auth), (dashboard), layout, globals.css)
-│   ├── components/             # Reusable UI primitives & app shell layout
-│   ├── lib/                    # Axios API client singleton & formatters
-│   └── types/                  # TypeScript contracts and DTO definitions
-├── storage/                    # Framework caches, sessions, logs, file uploads
-├── tests/                      # Automated Feature & Unit Test Suites (PHPUnit)
-├── .dockerignore               # Docker build exclusions
-├── .editorconfig               # Code style definitions
-├── .env                        # Centralized full-stack environment variables
-├── .env.example                # Example environment template
-├── .gitattributes              # Git line endings
-├── .gitignore                  # Comprehensive full-stack ignore rules
-├── artisan                     # Laravel CLI runner
-├── auto-deploy.sh              # Automated production deployment shell script
-├── composer.json               # Backend PHP dependencies & autoloading
-├── composer.lock               # PHP locked dependency graph
-├── diagnose.sh                 # Environment diagnostics script
-├── docker-compose.yml          # Containerized full-stack orchestration
-├── Dockerfile                  # Unified multi-stage container build
-├── next.config.mjs             # Next.js configuration & API rewrites
-├── package.json                # Frontend & full-stack command scripts
-├── phpunit.xml                 # Test runner configuration
-├── pnpm-lock.yaml              # Frontend locked dependency graph
-├── postcss.config.mjs          # Tailwind CSS v4 PostCSS configuration
-├── README.md                   # Project documentation
-└── tsconfig.json               # TypeScript configuration with @/* alias to ./src/*
-```
+### System Requirements
+- **PHP**: 8.2 or 8.3+ with `pdo_sqlite`, `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `json`.
+- **Node.js**: 18.18+ or 20+ (Next.js 15 compatible).
+- **Composer**: 2.x
+- **Package Manager**: `npm` or `pnpm`
 
----
+### Step-by-Step Installation
 
-## 🛠️ Quickstart Guide
-
-### Option 1: Docker Compose (Production Ready)
-```bash
-git clone https://github.com/Neideav/Tuntas.git
-cd Tuntas
-cp .env.example .env
-php artisan key:generate
-docker compose up -d --build
-```
-- **Web Interface**: `http://localhost:3000`
-- **REST API**: `http://localhost:8000/api/v1`
-
-### Option 2: Local Development Setup
 ```bash
 # 1. Clone repository
 git clone https://github.com/Neideav/Tuntas.git
 cd Tuntas
 
-# 2. Install PHP and Node dependencies directly from root
+# 2. Install PHP backend dependencies
 composer install
-pnpm install
 
-# 3. Configure environment and database
+# 3. Install Node frontend dependencies
+npm install
+
+# 4. Configure environment
 cp .env.example .env
 php artisan key:generate
+
+# 5. Run database migrations and seed default data
 php artisan migrate
 
-# 4. Start full-stack development servers concurrently
-pnpm run dev
+# 6. Verify static types and compile frontend
+npm run typecheck
+npm run build
+
+# 7. Start full-stack development servers concurrently
+npm run dev
 ```
 
+The application will be accessible at:
 - **Frontend Next.js**: `http://localhost:3000`
-- **Backend API Laravel**: `http://localhost:8000`
+- **Backend API Laravel**: `http://localhost:8000/api/v1`
 
 ---
 
-## 🧪 Verification & Automated Testing
+## ⚙️ Environment Variables Reference (`.env`)
+
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `APP_NAME` | `Tuntas` | Application name displayed in emails and headers |
+| `APP_ENV` | `local` | Environment mode (`local`, `production`) |
+| `APP_KEY` | *(Generated)* | Application encryption key (`php artisan key:generate`) |
+| `APP_DEBUG` | `true` | Debug flag (must be `false` in production) |
+| `APP_URL` | `http://localhost:8000` | Backend API URL |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api/v1` | Public API endpoint consumed by Next.js frontend client |
+| `DB_CONNECTION` | `sqlite` | Primary database connection driver |
+| `DB_DATABASE` | `database/database.sqlite` | SQLite database file location |
+| `QUEUE_CONNECTION` | `database` | Background queue connection (`sync`, `database`, `redis`) |
+| `SESSION_DRIVER` | `database` | Session storage driver |
+
+---
+
+## 🔄 Production Background Scheduler & Queue Setup
+
+### 1. Linux Crontab (Hourly Automated Deadlines & Reminders Scanner)
+Configure the system crontab to execute Laravel's scheduled commands:
 
 ```bash
-# Run all 35 PHPUnit backend feature & unit tests
-pnpm test
+crontab -e
+```
+Add the following line:
+```bash
+* * * * * cd /path/to/tuntas && php artisan schedule:run >> /dev/null 2>&1
+```
 
-# Run monorepo TypeScript verification
-pnpm run typecheck
+Scheduled jobs configured in `routes/console.php`:
+- `reminders:generate`: Runs hourly with overlap protection to scan tasks (<24h), projects (<48h), exams (<48h), and habits.
 
-# Run frontend linting
-pnpm run lint
+### 2. Supervisor Configuration (Background Queue Worker)
+Create a Supervisor worker configuration at `/etc/supervisor/conf.d/tuntas-worker.conf`:
 
-# Build production Next.js bundle
-pnpm run build
+```ini
+[program:tuntas-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /path/to/tuntas/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=2
+redirect_stderr=true
+stdout_logfile=/path/to/tuntas/storage/logs/worker.log
+stopwaitsecs=3600
+```
+Update and start Supervisor:
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start tuntas-worker:*
 ```
 
 ---
 
-## 📚 Comprehensive Documentation Suite
+## 🧪 Comprehensive Verification & Automated Testing
 
-Exhaustive technical manuals, schemas, and API contracts are available in [`docs/`](./docs/README.md):
-- **[01. Project Overview & Vision](./docs/01-project-overview.md)**
-- **[02. System Architecture & Monorepo Topology](./docs/02-system-architecture.md)**
-- **[03. Technology Stack & Tooling](./docs/03-technology-stack.md)**
-- **[04. Database Schema & ERD](./docs/04-database-schema-and-erd.md)**
-- **[05. RESTful API Reference](./docs/05-api-documentation.md)**
-- **[06. Core Functional Modules](./docs/06-core-modules.md)**
-- **[07. Dedicated Examination Subsystem Manual](./docs/07-dedicated-examination-system.md)**
-- **[08. Developer Guide & Contribution Handbook](./docs/08-developer-guide.md)**
-- **[09. Deployment & DevOps Operations Manual](./docs/09-deployment-and-devops.md)**
-- **[10. End-User Manual & Workflow Guide](./docs/10-user-guide.md)**
+Tuntas ships with a complete, automated verification test suite:
+
+```bash
+# 1. Run all 79 backend Unit & Feature tests (702 assertions)
+php artisan test
+
+# 2. Run the 19-Step End-to-End User Journey test specifically
+php artisan test --filter=FullIntegrationAndUserJourneyE2ETest
+
+# 3. Run frontend TypeScript contract validation
+npm run typecheck
+
+# 4. Run frontend linter
+npm run lint
+
+# 5. Build optimized Next.js production bundle
+npm run build
+```
+
+---
+
+## 📡 RESTful API Endpoints Summary (`/api/v1`)
+
+### Authentication & User
+- `POST /auth/register` — Create user account & issue Sanctum bearer token.
+- `POST /auth/login` — Authenticate and receive token.
+- `POST /auth/logout` — Revoke active token.
+- `GET /auth/me` — Authenticated profile.
+- `PUT /auth/profile` — Update name, email, timezone.
+- `PUT /auth/password` — Change password.
+- `POST /auth/forgot-password` — Password reset token creation.
+- `POST /auth/reset-password` — Reset password using token.
+
+### Tasks & Projects
+- `GET /tasks` | `POST /tasks` | `PUT /tasks/{id}` | `DELETE /tasks/{id}`
+- `PATCH /tasks/{id}/toggle` — Toggle status (`todo` ↔ `completed`).
+- `POST /tasks/bulk` — Perform bulk complete, delete, priority update.
+- `POST /tasks/{id}/subtasks` | `PATCH /subtasks/{id}/toggle` | `DELETE /subtasks/{id}`
+- `GET /projects` | `POST /projects` | `PUT /projects/{id}` | `DELETE /projects/{id}`
+- `POST /projects/{id}/milestones` | `PATCH /projects/{id}/milestones/{mid}/toggle`
+
+### Habits & Goals
+- `GET /habits` | `POST /habits` | `PUT /habits/{id}` | `DELETE /habits/{id}`
+- `POST /habits/{id}/toggle` — Check-in habit for date with streak calculation.
+- `POST /habits/{id}/freeze` — Apply freeze token to preserve streak.
+- `GET /habits/{id}/history` — Visual 30-day log history.
+- `GET /goals` | `POST /goals` | `PUT /goals/{id}` | `DELETE /goals/{id}`
+- `POST /goals/{id}/milestones` — Add measurable key result with weight.
+- `PATCH /milestones/{id}` — Update key result value and trigger auto goal rollup.
+
+### Learning Management & Examination Engine
+- `GET /courses` | `POST /courses` | `PUT /courses/{id}` | `DELETE /courses/{id}`
+- `POST /courses/{id}/modules` | `POST /modules/{id}/lessons` | `PATCH /lessons/{id}/toggle`
+- `POST /learning-sessions/start` | `POST /learning-sessions/{id}/complete`
+- `GET /question-banks` | `POST /question-banks` | `POST /question-banks/{id}/questions`
+- `GET /exam-blueprints` | `POST /exam-blueprints` | `POST /exam-blueprints/{id}/attach-questions`
+- `POST /exam-blueprints/{id}/start` — Begin exam attempt with anti-leak snapshot.
+- `POST /exam-attempts/{id}/sync` — Heartbeat answer synchronization.
+- `POST /exam-attempts/{id}/submit` — Atomic grade and evaluation.
+- `GET /exam-attempts/{id}/review` — Post-submission review with explanations.
+
+### Analytics & Reporting
+- `GET /analytics/productivity?range={today|this_week|this_month|last_30_days|custom}`
+- `GET /analytics/learning?range={...}&course_id={id}`
+- `GET /analytics/export?type={productivity|tasks|projects|learning|exams}` — Stream CSV.
+
+### Notifications & Schedule
+- `GET /notifications` | `PATCH /notifications/{id}/read` | `PATCH /notifications/{id}/archive`
+- `GET /notifications/preferences` | `PUT /notifications/preferences`
+- `POST /notifications/check-reminders` — On-demand idempotent scan.
+- `GET /calendar/events?start={iso}&end={iso}` — Unified cross-module schedule.
+
+---
+
+## 🔧 Troubleshooting Guide
+
+| Issue | Root Cause | Solution |
+| :--- | :--- | :--- |
+| `EPERM: operation not permitted` on Windows `src/.next` during build | Background `npm run dev` process holding file locks on generated types | Stop dev server before running `npm run build`, or run `npm run clean:next`. |
+| `Target [Illuminate\Contracts\Console\Kernel] is not instantiable` in tests | Laravel 12 application builder without Kernel singleton binding | Call `->withKernels()` in `bootstrap/app.php` before `withRouting()`. |
+| Notification reminders not generated during test or scan | Current time falls within user's configured Quiet Hours window | Check `quiet_hours_start` and `quiet_hours_end` in `/api/v1/notifications/preferences`. |
+| CORS or Unauthenticated error from Next.js | `NEXT_PUBLIC_API_URL` pointing to incorrect port | Ensure `.env` specifies `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`. |
 
 ---
 

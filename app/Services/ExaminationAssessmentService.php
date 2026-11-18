@@ -197,6 +197,9 @@ class ExaminationAssessmentService
                 $textResponse = null;
 
                 if (in_array($qType, ['multiple_choice_single', 'multiple_choice_multiple', 'true_false'])) {
+                    if (isset($answerData['selected_option_id']) && !isset($answerData['selected_option_ids'])) {
+                        $answerData['selected_option_ids'] = [$answerData['selected_option_id']];
+                    }
                     if (isset($answerData['selected_option_ids']) && is_array($answerData['selected_option_ids'])) {
                         $validOptIds = collect($qInfo['options'] ?? [])->pluck('id')->all();
                         $invalidOpts = array_diff($answerData['selected_option_ids'], $validOptIds);

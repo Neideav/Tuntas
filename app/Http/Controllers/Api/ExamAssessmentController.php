@@ -525,6 +525,7 @@ class ExamAssessmentController extends Controller
         $validated = $request->validate([
             'answers' => 'nullable|array',
             'answers.*.question_id' => 'required|integer',
+            'answers.*.selected_option_id' => 'nullable|integer',
             'answers.*.selected_option_ids' => 'nullable|array',
             'answers.*.text_response' => 'nullable|string',
             'flagged_question_ids' => 'nullable|array',

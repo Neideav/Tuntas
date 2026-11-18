@@ -476,7 +476,9 @@ class LearningController extends Controller
             $totalSeconds += max(0, $now->diffInSeconds($session->started_at));
         }
 
-        $durationMinutes = max(1, (int) round($totalSeconds / 60));
+        $durationMinutes = $request->filled('duration_minutes')
+            ? (int) $request->input('duration_minutes')
+            : max(1, (int) round($totalSeconds / 60));
 
         $session->update([
             'status' => 'completed',
