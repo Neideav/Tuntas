@@ -3,11 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Models\UserSetting;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -187,9 +192,95 @@ class AuthController extends Controller
             ]);
         }
 
+        // Generate cryptographically secure token
+        $plainToken = Str::random(64);
+
+        // Store hashed token in password_reset_tokens table
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $user->email],
+            [
+                'token' => Hash::make($plainToken),
+                'created_at' => Carbon::now(),
+            ]
+        );
+
+        Log::info("Password reset token generated for user [{$user->email}]");
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'action' => 'auth.forgot_password_requested',
+            'auditable_type' => User::class,
+            'auditable_id' => $user->id,
+            'payload' => ['email' => $user->email],
+            'created_at' => now(),
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => 'Tautan pemulihan kata sandi telah dikirim ke alamat email Anda.',
+            'data' => app()->environment('local', 'testing') ? ['reset_token' => $plainToken] : null,
+        ]);
+    }
+
+    /**
+     * Reset user password using valid token.
+     */
+    public function resetPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email|exists:users,email',
+            'token' => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $record = DB::table('password_reset_tokens')->where('email', $validated['email'])->first();
+
+        if (! $record) {
+            throw ValidationException::withMessages([
+                'token' => ['Token pemulihan kata sandi tidak valid atau belum pernah diajukan.'],
+            ]);
+        }
+
+        // Expiration check (60 minutes)
+        if (Carbon::parse($record->created_at)->addMinutes(60)->isPast()) {
+            DB::table('password_reset_tokens')->where('email', $validated['email'])->delete();
+            throw ValidationException::withMessages([
+                'token' => ['Token pemulihan kata sandi telah kedaluwarsa. Silakan ajukan ulang.'],
+            ]);
+        }
+
+        // Verify token match
+        if (! Hash::check($validated['token'], $record->token)) {
+            throw ValidationException::withMessages([
+                'token' => ['Token pemulihan kata sandi tidak sesuai.'],
+            ]);
+        }
+
+        $user = User::where('email', $validated['email'])->firstOrFail();
+
+        // Update password
+        $user->update([
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        // Invalidate used reset token
+        DB::table('password_reset_tokens')->where('email', $validated['email'])->delete();
+
+        // Revoke all existing Sanctum session tokens for security
+        $user->tokens()->delete();
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'action' => 'auth.password_reset_completed',
+            'auditable_type' => User::class,
+            'auditable_id' => $user->id,
+            'payload' => ['email' => $user->email],
+            'created_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Kata sandi Anda berhasil diperbarui. Silakan masuk menggunakan kata sandi baru.',
         ]);
     }
 }

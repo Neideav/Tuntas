@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Examination;
 use App\Models\ExaminationPreparation;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class ExaminationController extends Controller
 {
@@ -47,6 +49,8 @@ class ExaminationController extends Controller
      */
     public function store(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'subject' => 'required|string|max:100',
@@ -57,7 +61,10 @@ class ExaminationController extends Controller
             'location_platform' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'notes' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'status' => 'nullable|in:upcoming,preparing,completed,missed,cancelled',
             'passing_score' => 'nullable|numeric|min:0|max:100',
             'score' => 'nullable|numeric|min:0|max:100',
@@ -66,32 +73,36 @@ class ExaminationController extends Controller
             'preparations.*.due_date' => 'nullable|date',
         ]);
 
-        $exam = Examination::create([
-            'user_id' => $request->user()->id,
-            'category_id' => $validated['category_id'] ?? null,
-            'title' => $validated['title'],
-            'subject' => $validated['subject'],
-            'examination_date' => $validated['examination_date'],
-            'start_time' => $validated['start_time'] ?? null,
-            'end_time' => $validated['end_time'] ?? null,
-            'duration_minutes' => $validated['duration_minutes'] ?? null,
-            'location_platform' => $validated['location_platform'] ?? null,
-            'description' => $validated['description'] ?? null,
-            'notes' => $validated['notes'] ?? null,
-            'status' => $validated['status'] ?? 'upcoming',
-            'passing_score' => $validated['passing_score'] ?? null,
-            'score' => $validated['score'] ?? null,
-        ]);
+        $exam = DB::transaction(function () use ($request, $validated) {
+            $exam = Examination::create([
+                'user_id' => $request->user()->id,
+                'category_id' => $validated['category_id'] ?? null,
+                'title' => $validated['title'],
+                'subject' => $validated['subject'],
+                'examination_date' => $validated['examination_date'],
+                'start_time' => $validated['start_time'] ?? null,
+                'end_time' => $validated['end_time'] ?? null,
+                'duration_minutes' => $validated['duration_minutes'] ?? null,
+                'location_platform' => $validated['location_platform'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'notes' => $validated['notes'] ?? null,
+                'status' => $validated['status'] ?? 'upcoming',
+                'passing_score' => $validated['passing_score'] ?? null,
+                'score' => $validated['score'] ?? null,
+            ]);
 
-        if (! empty($validated['preparations'])) {
-            foreach ($validated['preparations'] as $index => $prep) {
-                $exam->preparations()->create([
-                    'title' => $prep['title'],
-                    'due_date' => $prep['due_date'] ?? null,
-                    'order' => $index,
-                ]);
+            if (! empty($validated['preparations'])) {
+                foreach ($validated['preparations'] as $index => $prep) {
+                    $exam->preparations()->create([
+                        'title' => $prep['title'],
+                        'due_date' => $prep['due_date'] ?? null,
+                        'order' => $index,
+                    ]);
+                }
             }
-        }
+
+            return $exam;
+        });
 
         return response()->json([
             'success' => true,
@@ -120,6 +131,8 @@ class ExaminationController extends Controller
     {
         $this->authorizeOwner($request, $examination);
 
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'sometimes|required|string|max:255',
             'subject' => 'sometimes|required|string|max:100',
@@ -130,7 +143,10 @@ class ExaminationController extends Controller
             'location_platform' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'notes' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'status' => 'nullable|in:upcoming,preparing,completed,missed,cancelled',
             'passing_score' => 'nullable|numeric|min:0|max:100',
             'score' => 'nullable|numeric|min:0|max:100',

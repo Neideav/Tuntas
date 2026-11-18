@@ -7,6 +7,7 @@ use App\Models\Goal;
 use App\Models\GoalMilestone;
 use App\Services\GoalService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class GoalController extends Controller
 {
@@ -40,10 +41,15 @@ class GoalController extends Controller
 
     public function store(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'start_date' => 'required|date',
             'target_date' => 'required|date|after_or_equal:start_date',
             'status' => 'nullable|in:not_started,in_progress,achieved,abandoned',
@@ -82,10 +88,15 @@ class GoalController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'start_date' => 'sometimes|date',
             'target_date' => 'sometimes|date',
             'status' => 'sometimes|in:not_started,in_progress,achieved,abandoned',

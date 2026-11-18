@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ProjectController extends Controller
 {
@@ -41,10 +42,15 @@ class ProjectController extends Controller
      */
     public function store(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'status' => 'nullable|in:planning,in_progress,completed,on_hold',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'start_date' => 'nullable|date',
@@ -94,10 +100,15 @@ class ProjectController extends Controller
             abort(403);
         }
 
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'status' => 'nullable|in:planning,in_progress,completed,on_hold',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'start_date' => 'nullable|date',

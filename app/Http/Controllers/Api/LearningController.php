@@ -10,6 +10,8 @@ use App\Models\LearningModule;
 use App\Models\LearningSession;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class LearningController extends Controller
 {
@@ -31,11 +33,16 @@ class LearningController extends Controller
 
     public function coursesStore(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'color' => 'nullable|string|max:50',
         ]);
 
@@ -72,11 +79,16 @@ class LearningController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'color' => 'nullable|string|max:50',
             'is_published' => 'nullable|boolean',
         ]);
@@ -161,8 +173,10 @@ class LearningController extends Controller
         }
 
         $course = $module->course;
-        $module->delete();
-        $course->recalculateProgress();
+        DB::transaction(function () use ($module, $course) {
+            $module->delete();
+            $course->recalculateProgress();
+        });
 
         return response()->json([
             'success' => true,
@@ -235,8 +249,10 @@ class LearningController extends Controller
         }
 
         $course = $lesson->module->course;
-        $lesson->delete();
-        $course->recalculateProgress();
+        DB::transaction(function () use ($lesson, $course) {
+            $lesson->delete();
+            $course->recalculateProgress();
+        });
 
         return response()->json([
             'success' => true,
@@ -251,13 +267,16 @@ class LearningController extends Controller
         }
 
         $isCompleted = !$lesson->is_completed;
-        $lesson->update([
-            'is_completed' => $isCompleted,
-            'completed_at' => $isCompleted ? Carbon::now() : null,
-        ]);
-
         $course = $lesson->module->course;
-        $newProgress = $course->recalculateProgress();
+
+        $newProgress = DB::transaction(function () use ($lesson, $isCompleted, $course) {
+            $lesson->update([
+                'is_completed' => $isCompleted,
+                'completed_at' => $isCompleted ? Carbon::now() : null,
+            ]);
+
+            return $course->recalculateProgress();
+        });
 
         return response()->json([
             'success' => true,

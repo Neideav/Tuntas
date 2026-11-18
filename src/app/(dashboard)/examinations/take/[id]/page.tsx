@@ -101,14 +101,14 @@ export default function ExamTakingPage({
   }, [answers]);
 
   // Sync answers heartbeat
-  const syncAnswers = useCallback(async () => {
+  const syncAnswers = useCallback(async (throwOnError = false): Promise<boolean> => {
     const payload = Object.entries(answersRef.current).map(([qId, val]) => ({
       question_id: parseInt(qId),
       selected_option_ids: val.selected_option_ids,
       text_response: val.text_response,
     }));
 
-    if (payload.length === 0) return;
+    if (payload.length === 0) return true;
 
     try {
       setSyncStatus('saving');
@@ -118,14 +118,23 @@ export default function ExamTakingPage({
         if (res.data.data?.remaining_seconds !== undefined) {
           setRemainingSeconds(res.data.data.remaining_seconds);
         }
+        return true;
       }
+      if (throwOnError) {
+        throw new Error(res.data?.message || 'Gagal menyimpan jawaban ujian.');
+      }
+      return false;
     } catch (err: any) {
       if (err.response?.status === 410) {
         alert('Examination time has expired! Auto-submitting answers...');
         router.replace(`/examinations/review/${attemptId}`);
-      } else {
-        setSyncStatus('error');
+        return false;
       }
+      setSyncStatus('error');
+      if (throwOnError) {
+        throw err;
+      }
+      return false;
     }
   }, [attemptId, router]);
 
@@ -226,15 +235,22 @@ export default function ExamTakingPage({
   const handleSubmitExam = async () => {
     try {
       setSubmitting(true);
-      // Final sync before submission
-      await syncAnswers();
+      // Final sync before submission — must succeed to prevent data loss (BUG-06)
+      const synced = await syncAnswers(true);
+      if (!synced) {
+        throw new Error('Sinkronisasi jawaban terakhir gagal. Pengumpulan dibatalkan untuk mencegah kehilangan jawaban.');
+      }
 
       const res = await api.post(`/exam-attempts/${attemptId}/submit`);
       if (res.data?.success) {
         router.replace(`/examinations/review/${attemptId}`);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Submission failed.');
+      alert(
+        err.response?.data?.message ||
+        err.message ||
+        'Gagal mengumpulkan ujian. Silakan periksa koneksi internet Anda dan coba lagi.'
+      );
     } finally {
       setSubmitting(false);
     }

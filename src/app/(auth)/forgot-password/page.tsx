@@ -65,6 +65,14 @@ export default function ForgotPasswordPage() {
                 <p className="text-[11px] text-emerald-700 font-normal mt-0.5">
                   {statusMsg}
                 </p>
+                <div className="mt-2 pt-1 border-t border-emerald-200">
+                  <Link
+                    href={`/reset-password?email=${encodeURIComponent(email)}`}
+                    className="text-[11px] font-bold text-emerald-900 underline hover:text-emerald-950 inline-flex items-center gap-1"
+                  >
+                    Sudah memiliki token? Masukkan token di sini &rarr;
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

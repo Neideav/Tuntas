@@ -71,6 +71,7 @@ class ExaminationAssessmentService
         }
 
         $snapshot = [];
+        $answerKeySnapshot = [];
         $totalPointsPossible = 0.0;
 
         foreach ($blueprintQuestions as $q) {
@@ -100,6 +101,25 @@ class ExaminationAssessmentService
                 'options' => $options->all(),
                 // explanation is intentionally NOT included in active student snapshot
             ];
+
+            // Immutable server-side authoritative snapshot including answer key and explanations
+            $answerKeySnapshot[] = [
+                'id' => $q->id,
+                'type' => $q->type,
+                'prompt' => $q->prompt,
+                'code_snippet' => $q->code_snippet,
+                'difficulty' => $q->difficulty,
+                'explanation' => $q->explanation,
+                'points' => $points,
+                'options' => $q->options->map(function ($opt) {
+                    return [
+                        'id' => $opt->id,
+                        'option_text' => $opt->option_text,
+                        'order' => $opt->order,
+                        'is_correct' => (bool) $opt->is_correct,
+                    ];
+                })->all(),
+            ];
         }
 
         $now = Carbon::now();
@@ -114,6 +134,7 @@ class ExaminationAssessmentService
             'expires_at' => $expiresAt,
             'total_points_possible' => $totalPointsPossible,
             'questions_snapshot' => $snapshot,
+            'answer_key_snapshot' => $answerKeySnapshot,
         ]);
 
         AuditLog::create([
@@ -149,15 +170,25 @@ class ExaminationAssessmentService
         $snapshot = collect($attempt->questions_snapshot ?? []);
         $snapshotMap = $snapshot->keyBy('id');
 
+        // Strictly validate that all question IDs belong to the active attempt snapshot (BUG-05)
+        $invalidIds = [];
+        foreach ($answersList as $answerData) {
+            $qId = $answerData['question_id'] ?? null;
+            if (!$qId || !$snapshotMap->has($qId)) {
+                $invalidIds[] = $qId ?? 'null';
+            }
+        }
+
+        if (!empty($invalidIds)) {
+            throw new \InvalidArgumentException(
+                'Satu atau lebih ID soal tidak valid atau tidak termasuk dalam sesi ujian ini: ' . implode(', ', $invalidIds)
+            );
+        }
+
         $savedCount = 0;
         DB::transaction(function () use ($attempt, $answersList, $snapshotMap, &$savedCount) {
             foreach ($answersList as $answerData) {
-                $qId = $answerData['question_id'] ?? null;
-                if (!$qId || !$snapshotMap->has($qId)) {
-                    // Ignore question IDs that do not belong to active snapshot
-                    continue;
-                }
-
+                $qId = $answerData['question_id'];
                 $qInfo = $snapshotMap->get($qId);
                 $qType = $qInfo['type'] ?? 'multiple_choice_single';
 
@@ -167,6 +198,10 @@ class ExaminationAssessmentService
                 if (in_array($qType, ['multiple_choice_single', 'multiple_choice_multiple', 'true_false'])) {
                     if (isset($answerData['selected_option_ids']) && is_array($answerData['selected_option_ids'])) {
                         $validOptIds = collect($qInfo['options'] ?? [])->pluck('id')->all();
+                        $invalidOpts = array_diff($answerData['selected_option_ids'], $validOptIds);
+                        if (!empty($invalidOpts)) {
+                            throw new \InvalidArgumentException("Opsi yang dipilih tidak valid untuk soal ID {$qId}.");
+                        }
                         $selectedOptionIds = array_values(array_intersect($answerData['selected_option_ids'], $validOptIds));
                     }
                 } else {
@@ -210,13 +245,32 @@ class ExaminationAssessmentService
         return DB::transaction(function () use ($attempt) {
             $totalPointsEarned = 0.0;
             $snapshot = $attempt->questions_snapshot ?? [];
+            $keySnapshotMap = collect($attempt->answer_key_snapshot ?? [])->keyBy('id');
             $hasPendingManualReview = false;
 
             foreach ($snapshot as $qData) {
                 $qId = $qData['id'];
                 $pointsPossible = (float) $qData['points'];
 
-                $authoritativeQuestion = Question::with('options')->find($qId);
+                // Grade strictly using immutable snapshot created at start time
+                $authoritative = $keySnapshotMap->get($qId);
+                if (!$authoritative) {
+                    // Backwards compatibility fallback for legacy attempts
+                    $liveQuestion = Question::with('options')->find($qId);
+                    if ($liveQuestion) {
+                        $authoritative = [
+                            'id' => $liveQuestion->id,
+                            'type' => $liveQuestion->type,
+                            'explanation' => $liveQuestion->explanation,
+                            'options' => $liveQuestion->options->map(fn($o) => [
+                                'id' => $o->id,
+                                'option_text' => $o->option_text,
+                                'is_correct' => (bool) $o->is_correct,
+                            ])->all(),
+                        ];
+                    }
+                }
+
                 $answer = ExamAnswer::where('exam_attempt_id', $attempt->id)
                     ->where('question_id', $qId)
                     ->first();
@@ -224,13 +278,13 @@ class ExaminationAssessmentService
                 $isCorrect = false;
                 $awardedPoints = 0.0;
 
-                if ($authoritativeQuestion && $answer) {
-                    $qType = $authoritativeQuestion->type;
+                if ($authoritative && $answer) {
+                    $qType = $authoritative['type'] ?? 'multiple_choice_single';
+                    $authOptions = collect($authoritative['options'] ?? []);
 
                     if ($qType === 'multiple_choice_single' || $qType === 'true_false') {
-                        $correctOptId = $authoritativeQuestion->options
-                            ->where('is_correct', true)
-                            ->value('id');
+                        $correctOpt = $authOptions->firstWhere('is_correct', true);
+                        $correctOptId = $correctOpt['id'] ?? null;
 
                         $selected = $answer->selected_option_ids;
                         if (is_array($selected) && count($selected) === 1 && (int) $selected[0] === (int) $correctOptId) {
@@ -238,9 +292,10 @@ class ExaminationAssessmentService
                             $awardedPoints = $pointsPossible;
                         }
                     } elseif ($qType === 'multiple_choice_multiple') {
-                        $correctOptIds = $authoritativeQuestion->options
+                        $correctOptIds = $authOptions
                             ->where('is_correct', true)
                             ->pluck('id')
+                            ->map(fn($v) => (int)$v)
                             ->sort()
                             ->values()
                             ->all();
@@ -256,7 +311,7 @@ class ExaminationAssessmentService
                             $awardedPoints = $pointsPossible;
                         }
                     } elseif ($qType === 'short_answer') {
-                        $expectedAnswers = $authoritativeQuestion->options
+                        $expectedAnswers = $authOptions
                             ->where('is_correct', true)
                             ->pluck('option_text')
                             ->map(fn($s) => strtolower(trim($s)))
@@ -377,18 +432,24 @@ class ExaminationAssessmentService
 
         $answers = ExamAnswer::where('exam_attempt_id', $attempt->id)->get()->keyBy('question_id');
         $snapshot = $attempt->questions_snapshot ?? [];
+        $keySnapshotMap = collect($attempt->answer_key_snapshot ?? [])->keyBy('id');
 
         $questionsList = [];
         foreach ($snapshot as $qData) {
             $ans = $answers->get($qData['id']);
-            $authoritative = Question::find($qData['id']);
+            $authData = $keySnapshotMap->get($qData['id']);
+            $explanation = $authData['explanation'] ?? null;
+            if (!$explanation) {
+                $liveQuestion = Question::find($qData['id']);
+                $explanation = $liveQuestion?->explanation;
+            }
 
             $questionsList[] = [
                 'question_id' => $qData['id'],
                 'type' => $qData['type'],
                 'prompt' => $qData['prompt'],
                 'code_snippet' => $qData['code_snippet'] ?? null,
-                'explanation' => $authoritative?->explanation,
+                'explanation' => $explanation,
                 'points_possible' => (float) $qData['points'],
                 'awarded_points' => $ans ? (float) $ans->awarded_points : 0.0,
                 'is_correct' => $ans ? $ans->is_correct : null,
@@ -523,20 +584,36 @@ class ExaminationAssessmentService
 
         $answers = ExamAnswer::where('exam_attempt_id', $attempt->id)->get()->keyBy('question_id');
         $snapshot = $attempt->questions_snapshot ?? [];
+        $keySnapshotMap = collect($attempt->answer_key_snapshot ?? [])->keyBy('id');
 
         $reviewedQuestions = [];
         foreach ($snapshot as $qData) {
-            $authoritative = Question::with('options')->find($qData['id']);
             $ans = $answers->get($qData['id']);
+            $authData = $keySnapshotMap->get($qData['id']);
 
             $optionsReview = [];
-            if ($authoritative) {
-                foreach ($authoritative->options as $opt) {
+            $explanation = null;
+
+            if ($authData) {
+                $explanation = $authData['explanation'] ?? null;
+                foreach ($authData['options'] ?? [] as $opt) {
                     $optionsReview[] = [
-                        'id' => $opt->id,
-                        'option_text' => $opt->option_text,
-                        'is_correct' => $opt->is_correct,
+                        'id' => $opt['id'],
+                        'option_text' => $opt['option_text'],
+                        'is_correct' => (bool) ($opt['is_correct'] ?? false),
                     ];
+                }
+            } else {
+                $liveQuestion = Question::with('options')->find($qData['id']);
+                if ($liveQuestion) {
+                    $explanation = $liveQuestion->explanation;
+                    foreach ($liveQuestion->options as $opt) {
+                        $optionsReview[] = [
+                            'id' => $opt->id,
+                            'option_text' => $opt->option_text,
+                            'is_correct' => (bool) $opt->is_correct,
+                        ];
+                    }
                 }
             }
 
@@ -545,7 +622,7 @@ class ExaminationAssessmentService
                 'type' => $qData['type'],
                 'prompt' => $qData['prompt'],
                 'code_snippet' => $qData['code_snippet'] ?? null,
-                'explanation' => $authoritative ? $authoritative->explanation : null,
+                'explanation' => $explanation,
                 'points_possible' => $qData['points'],
                 'points_awarded' => $ans ? (float) $ans->awarded_points : 0.0,
                 'is_correct' => $ans ? $ans->is_correct : false,

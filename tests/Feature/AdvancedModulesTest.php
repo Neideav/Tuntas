@@ -7,6 +7,7 @@ use App\Models\ExamAttempt;
 use App\Models\ExamBlueprint;
 use App\Models\Goal;
 use App\Models\Habit;
+use App\Models\HabitLog;
 use App\Models\Question;
 use App\Models\QuestionBank;
 use App\Models\User;
@@ -63,6 +64,46 @@ class AdvancedModulesTest extends TestCase
             ->assertJsonPath('data.habit.current_streak', 2);
     }
 
+    public function test_habit_weekdays_and_weekly_frequency_streaks(): void
+    {
+        // 1. Weekdays habit: should skip weekends and maintain streak across preceding weekdays
+        $weekdaysHabit = Habit::create([
+            'user_id' => $this->user->id,
+            'title' => 'Weekday Standup',
+            'frequency' => 'weekdays',
+        ]);
+
+        $today = Carbon::today();
+        // Determine 3 consecutive weekdays ending either today or yesterday
+        $d1 = $today->isWeekday() ? $today->copy() : $today->copy()->previous(Carbon::FRIDAY);
+        $d2 = $d1->copy()->subWeekday();
+        $d3 = $d2->copy()->subWeekday();
+
+        HabitLog::create(['habit_id' => $weekdaysHabit->id, 'user_id' => $this->user->id, 'log_date' => $d3->toDateString(), 'is_completed' => true]);
+        HabitLog::create(['habit_id' => $weekdaysHabit->id, 'user_id' => $this->user->id, 'log_date' => $d2->toDateString(), 'is_completed' => true]);
+        HabitLog::create(['habit_id' => $weekdaysHabit->id, 'user_id' => $this->user->id, 'log_date' => $d1->toDateString(), 'is_completed' => true]);
+
+        $habitService = app(\App\Services\HabitService::class);
+        $streak = $habitService->calculateStreak($weekdaysHabit);
+        $this->assertEquals(3, $streak);
+
+        // 2. Weekly habit: should count completed ISO weeks
+        $weeklyHabit = Habit::create([
+            'user_id' => $this->user->id,
+            'title' => 'Weekly System Backup',
+            'frequency' => 'weekly',
+        ]);
+
+        $thisWeekDay = Carbon::today()->startOfWeek()->addDay(); // Tuesday of this week
+        $lastWeekDay = Carbon::today()->subWeek()->startOfWeek()->addDays(2); // Wednesday of last week
+
+        HabitLog::create(['habit_id' => $weeklyHabit->id, 'user_id' => $this->user->id, 'log_date' => $thisWeekDay->toDateString(), 'is_completed' => true]);
+        HabitLog::create(['habit_id' => $weeklyHabit->id, 'user_id' => $this->user->id, 'log_date' => $lastWeekDay->toDateString(), 'is_completed' => true]);
+
+        $weeklyStreak = $habitService->calculateStreak($weeklyHabit);
+        $this->assertEquals(2, $weeklyStreak);
+    }
+
     public function test_habit_freeze_token_application(): void
     {
         $habit = Habit::create([
@@ -73,6 +114,8 @@ class AdvancedModulesTest extends TestCase
         ]);
 
         $freezeDate = Carbon::today()->subDays(2)->toDateString();
+
+        // 1. First application succeeds
         $response = $this->actingAs($this->user)->postJson("/api/v1/habits/{$habit->id}/freeze", [
             'date' => $freezeDate,
         ]);
@@ -80,6 +123,33 @@ class AdvancedModulesTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.habit.freeze_tokens', 1);
+
+        // 2. Duplicate freeze attempt on same date fails and does NOT deduct token
+        $duplicateRes = $this->actingAs($this->user)->postJson("/api/v1/habits/{$habit->id}/freeze", [
+            'date' => $freezeDate,
+        ]);
+        $duplicateRes->assertStatus(400);
+        $this->assertEquals(1, $habit->fresh()->freeze_tokens);
+
+        // 3. Freeze attempt on future date fails
+        $futureDate = Carbon::today()->addDays(2)->toDateString();
+        $futureRes = $this->actingAs($this->user)->postJson("/api/v1/habits/{$habit->id}/freeze", [
+            'date' => $futureDate,
+        ]);
+        $futureRes->assertStatus(400);
+        $this->assertEquals(1, $habit->fresh()->freeze_tokens);
+
+        // 4. Freeze attempt on already completed date fails
+        $completedDate = Carbon::today()->subDays(3)->toDateString();
+        $this->actingAs($this->user)->postJson("/api/v1/habits/{$habit->id}/toggle", [
+            'date' => $completedDate,
+        ])->assertStatus(200);
+
+        $completedFreezeRes = $this->actingAs($this->user)->postJson("/api/v1/habits/{$habit->id}/freeze", [
+            'date' => $completedDate,
+        ]);
+        $completedFreezeRes->assertStatus(400);
+        $this->assertEquals(1, $habit->fresh()->freeze_tokens);
     }
 
     public function test_goal_milestones_and_progress_recalculation(): void

@@ -26,6 +26,15 @@ class ExamAttempt extends Model
         'score_percentage',
         'is_passed',
         'questions_snapshot',
+        'answer_key_snapshot',
+    ];
+
+    /**
+     * Hidden attributes from serialized arrays and JSON responses.
+     * Protects answer keys and authoritative evaluation data on the server side.
+     */
+    protected $hidden = [
+        'answer_key_snapshot',
     ];
 
     protected $casts = [
@@ -37,6 +46,7 @@ class ExamAttempt extends Model
         'score_percentage' => 'float',
         'is_passed' => 'boolean',
         'questions_snapshot' => 'array',
+        'answer_key_snapshot' => 'array',
     ];
 
     public function blueprint()

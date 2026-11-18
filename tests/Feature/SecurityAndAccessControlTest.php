@@ -128,6 +128,50 @@ class SecurityAndAccessControlTest extends TestCase
         $this->actingAs($this->userA)->deleteJson("/api/v1/notifications/{$notifB->id}")->assertStatus(403);
     }
 
+    public function test_relation_ownership_validation_prevents_cross_tenant_association(): void
+    {
+        $projectB = Project::create([
+            'user_id' => $this->userB->id,
+            'title' => 'Project B Private',
+        ]);
+
+        $categoryB = Category::create([
+            'user_id' => $this->userB->id,
+            'name' => 'Category B Private',
+            'type' => 'task',
+        ]);
+
+        // 1. User A cannot create task linking User B's project
+        $resProject = $this->actingAs($this->userA)->postJson('/api/v1/tasks', [
+            'title' => 'Cross-tenant task',
+            'project_id' => $projectB->id,
+        ]);
+        $resProject->assertStatus(422)->assertJsonValidationErrors(['project_id']);
+
+        // 2. User A cannot create task linking User B's category
+        $resCat = $this->actingAs($this->userA)->postJson('/api/v1/tasks', [
+            'title' => 'Cross-tenant category task',
+            'category_id' => $categoryB->id,
+        ]);
+        $resCat->assertStatus(422)->assertJsonValidationErrors(['category_id']);
+
+        // 3. User A cannot update task to link User B's project or category
+        $taskA = Task::create([
+            'user_id' => $this->userA->id,
+            'title' => 'Task Owned By A',
+        ]);
+
+        $resUpdateProj = $this->actingAs($this->userA)->putJson("/api/v1/tasks/{$taskA->id}", [
+            'project_id' => $projectB->id,
+        ]);
+        $resUpdateProj->assertStatus(422)->assertJsonValidationErrors(['project_id']);
+
+        $resUpdateCat = $this->actingAs($this->userA)->putJson("/api/v1/tasks/{$taskA->id}", [
+            'category_id' => $categoryB->id,
+        ]);
+        $resUpdateCat->assertStatus(422)->assertJsonValidationErrors(['category_id']);
+    }
+
     public function test_examination_security_and_anti_tampering(): void
     {
         $bank = QuestionBank::create([

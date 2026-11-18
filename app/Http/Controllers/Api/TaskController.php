@@ -10,6 +10,8 @@ use App\Models\Tag;
 use App\Models\Task;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
 {
@@ -97,13 +99,21 @@ class TaskController extends Controller
      */
     public function store(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'nullable|in:todo,in_progress,in_review,completed,cancelled',
             'priority' => 'nullable|in:low,medium,high,urgent',
-            'project_id' => 'nullable|exists:projects,id',
-            'category_id' => 'nullable|exists:categories,id',
+            'project_id' => [
+                'nullable',
+                Rule::exists('projects', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
             'due_date' => 'nullable|date',
             'start_date' => 'nullable|date',
             'reminder_at' => 'nullable|date',
@@ -115,59 +125,63 @@ class TaskController extends Controller
             'tags.*' => 'string|max:50',
         ]);
 
-        $task = Task::create([
-            'user_id' => $request->user()->id,
-            'project_id' => $validated['project_id'] ?? null,
-            'category_id' => $validated['category_id'] ?? null,
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'status' => $validated['status'] ?? 'todo',
-            'priority' => $validated['priority'] ?? 'medium',
-            'due_date' => $validated['due_date'] ?? null,
-            'start_date' => $validated['start_date'] ?? null,
-            'reminder_at' => $validated['reminder_at'] ?? null,
-            'is_recurring' => $validated['is_recurring'] ?? false,
-            'recurrence_pattern' => $validated['recurrence_pattern'] ?? 'daily',
-            'completed_at' => ($validated['status'] ?? 'todo') === 'completed' ? Carbon::now() : null,
-        ]);
+        $task = DB::transaction(function () use ($request, $validated) {
+            $task = Task::create([
+                'user_id' => $request->user()->id,
+                'project_id' => $validated['project_id'] ?? null,
+                'category_id' => $validated['category_id'] ?? null,
+                'title' => $validated['title'],
+                'description' => $validated['description'] ?? null,
+                'status' => $validated['status'] ?? 'todo',
+                'priority' => $validated['priority'] ?? 'medium',
+                'due_date' => $validated['due_date'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'reminder_at' => $validated['reminder_at'] ?? null,
+                'is_recurring' => $validated['is_recurring'] ?? false,
+                'recurrence_pattern' => $validated['recurrence_pattern'] ?? 'daily',
+                'completed_at' => ($validated['status'] ?? 'todo') === 'completed' ? Carbon::now() : null,
+            ]);
 
-        // Subtasks
-        if (!empty($validated['subtasks'])) {
-            foreach ($validated['subtasks'] as $index => $sub) {
-                $task->subtasks()->create([
-                    'title' => $sub['title'],
-                    'order' => $index,
-                ]);
+            // Subtasks
+            if (!empty($validated['subtasks'])) {
+                foreach ($validated['subtasks'] as $index => $sub) {
+                    $task->subtasks()->create([
+                        'title' => $sub['title'],
+                        'order' => $index,
+                    ]);
+                }
             }
-        }
 
-        // Tags
-        if (!empty($validated['tags'])) {
-            $tagIds = [];
-            foreach ($validated['tags'] as $tagName) {
-                $tag = Tag::firstOrCreate(
-                    ['user_id' => $request->user()->id, 'name' => trim($tagName)],
-                    ['color' => '#0284c7']
-                );
-                $tagIds[] = $tag->id;
+            // Tags
+            if (!empty($validated['tags'])) {
+                $tagIds = [];
+                foreach ($validated['tags'] as $tagName) {
+                    $tag = Tag::firstOrCreate(
+                        ['user_id' => $request->user()->id, 'name' => trim($tagName)],
+                        ['color' => '#0284c7']
+                    );
+                    $tagIds[] = $tag->id;
+                }
+                $task->tags()->sync($tagIds);
             }
-            $task->tags()->sync($tagIds);
-        }
 
-        // Recalculate project progress if associated
-        if ($task->project_id) {
-            $task->project->updateProgress();
-        }
+            // Recalculate project progress if associated
+            if ($task->project_id) {
+                $task->project->updateProgress();
+            }
 
-        // Audit Log
-        AuditLog::create([
-            'user_id' => $request->user()->id,
-            'action' => 'task.created',
-            'auditable_type' => Task::class,
-            'auditable_id' => (string) $task->id,
-            'payload' => ['title' => $task->title, 'priority' => $task->priority],
-            'created_at' => now(),
-        ]);
+            // Audit Log
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'action' => 'task.created',
+                'auditable_type' => Task::class,
+                'auditable_id' => (string) $task->id,
+                'payload' => ['title' => $task->title, 'priority' => $task->priority],
+                'created_at' => now(),
+            ]);
+
+            return $task;
+        });
 
         return response()->json([
             'success' => true,
@@ -195,14 +209,21 @@ class TaskController extends Controller
     public function update(Request $request, Task $task)
     {
         $this->authorizeOwner($request, $task);
+        $userId = $request->user()->id;
 
         $validated = $request->validate([
             'title' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'nullable|in:todo,in_progress,in_review,completed,cancelled',
             'priority' => 'nullable|in:low,medium,high,urgent',
-            'project_id' => 'nullable|exists:projects,id',
-            'category_id' => 'nullable|exists:categories,id',
+            'project_id' => [
+                'nullable',
+                Rule::exists('projects', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
             'due_date' => 'nullable|date',
             'start_date' => 'nullable|date',
             'reminder_at' => 'nullable|date',
@@ -212,33 +233,35 @@ class TaskController extends Controller
             'tags.*' => 'string|max:50',
         ]);
 
-        if (isset($validated['status'])) {
-            if ($validated['status'] === 'completed' && $task->status !== 'completed') {
-                $validated['completed_at'] = Carbon::now();
-                // Spawn next recurrence if recurring
-                $this->spawnNextRecurrence($task);
-            } elseif ($validated['status'] !== 'completed') {
-                $validated['completed_at'] = null;
+        DB::transaction(function () use ($request, $task, $validated) {
+            if (isset($validated['status'])) {
+                if ($validated['status'] === 'completed' && $task->status !== 'completed') {
+                    $validated['completed_at'] = Carbon::now();
+                    // Spawn next recurrence if recurring
+                    $this->spawnNextRecurrence($task);
+                } elseif ($validated['status'] !== 'completed') {
+                    $validated['completed_at'] = null;
+                }
             }
-        }
 
-        $task->update($validated);
+            $task->update($validated);
 
-        if (isset($validated['tags'])) {
-            $tagIds = [];
-            foreach ($validated['tags'] as $tagName) {
-                $tag = Tag::firstOrCreate(
-                    ['user_id' => $request->user()->id, 'name' => trim($tagName)],
-                    ['color' => '#0284c7']
-                );
-                $tagIds[] = $tag->id;
+            if (isset($validated['tags'])) {
+                $tagIds = [];
+                foreach ($validated['tags'] as $tagName) {
+                    $tag = Tag::firstOrCreate(
+                        ['user_id' => $request->user()->id, 'name' => trim($tagName)],
+                        ['color' => '#0284c7']
+                    );
+                    $tagIds[] = $tag->id;
+                }
+                $task->tags()->sync($tagIds);
             }
-            $task->tags()->sync($tagIds);
-        }
 
-        if ($task->project_id) {
-            $task->project->updateProgress();
-        }
+            if ($task->project_id) {
+                $task->project->updateProgress();
+            }
+        });
 
         return response()->json([
             'success' => true,
@@ -254,21 +277,23 @@ class TaskController extends Controller
     {
         $this->authorizeOwner($request, $task);
 
-        $newStatus = $task->status === 'completed' ? 'todo' : 'completed';
-        $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
+        DB::transaction(function () use ($task) {
+            $newStatus = $task->status === 'completed' ? 'todo' : 'completed';
+            $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
 
-        $task->update([
-            'status' => $newStatus,
-            'completed_at' => $completedAt,
-        ]);
+            $task->update([
+                'status' => $newStatus,
+                'completed_at' => $completedAt,
+            ]);
 
-        if ($newStatus === 'completed' && $task->is_recurring) {
-            $this->spawnNextRecurrence($task);
-        }
+            if ($newStatus === 'completed' && $task->is_recurring) {
+                $this->spawnNextRecurrence($task);
+            }
 
-        if ($task->project_id) {
-            $task->project->updateProgress();
-        }
+            if ($task->project_id) {
+                $task->project->updateProgress();
+            }
+        });
 
         return response()->json([
             'success' => true,
@@ -284,12 +309,14 @@ class TaskController extends Controller
     {
         $this->authorizeOwner($request, $task);
 
-        $projectId = $task->project_id;
-        $task->delete();
+        DB::transaction(function () use ($task) {
+            $projectId = $task->project_id;
+            $task->delete();
 
-        if ($projectId) {
-            Project::find($projectId)?->updateProgress();
-        }
+            if ($projectId) {
+                Project::find($projectId)?->updateProgress();
+            }
+        });
 
         return response()->json([
             'success' => true,

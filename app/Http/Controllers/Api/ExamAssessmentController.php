@@ -506,6 +506,8 @@ class ExamAssessmentController extends Controller
                 'message' => 'Answers synced successfully',
                 'data' => $result,
             ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         } catch (\DomainException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 410);
         }

@@ -82,6 +82,57 @@ class ActivityAndNavigationTest extends TestCase
         ]);
         $responseSuccess->assertStatus(200)
             ->assertJsonPath('success', true);
+
+        // Verify token created in database
+        $this->assertDatabaseHas('password_reset_tokens', [
+            'email' => $this->user->email,
+        ]);
+
+        $resetToken = $responseSuccess->json('data.reset_token');
+        $this->assertNotEmpty($resetToken);
+
+        // 3. Reset password with invalid token fails
+        $invalidTokenRes = $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $this->user->email,
+            'token' => 'invalid-token-12345',
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ]);
+        $invalidTokenRes->assertStatus(422)
+            ->assertJsonValidationErrors(['token']);
+
+        // 4. Reset password with non-matching confirmation fails
+        $unconfirmedRes = $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $this->user->email,
+            'token' => $resetToken,
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'DifferentPassword!',
+        ]);
+        $unconfirmedRes->assertStatus(422)
+            ->assertJsonValidationErrors(['password']);
+
+        // 5. Successful password reset
+        $validResetRes = $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $this->user->email,
+            'token' => $resetToken,
+            'password' => 'BrandNewSecret999!',
+            'password_confirmation' => 'BrandNewSecret999!',
+        ]);
+        $validResetRes->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        // Token consumed from database
+        $this->assertDatabaseMissing('password_reset_tokens', [
+            'email' => $this->user->email,
+        ]);
+
+        // 6. User can login with new password
+        $loginRes = $this->postJson('/api/v1/auth/login', [
+            'email' => $this->user->email,
+            'password' => 'BrandNewSecret999!',
+        ]);
+        $loginRes->assertStatus(200)
+            ->assertJsonPath('success', true);
     }
 
     public function test_activity_endpoint_returns_user_audit_logs_with_proper_isolation(): void

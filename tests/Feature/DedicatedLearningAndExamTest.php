@@ -307,6 +307,18 @@ class DedicatedLearningAndExamTest extends TestCase
         $syncRes->assertStatus(200)
             ->assertJsonPath('data.saved_count', 2);
 
+        // 5b. Syncing an invalid/non-existent question ID fails with 422 (BUG-05)
+        $invalidSync = $this->actingAs($this->user)->postJson("/api/v1/exam-attempts/{$attemptId}/sync", [
+            'answers' => [
+                [
+                    'question_id' => 999999,
+                    'text_response' => 'invalid question',
+                ],
+            ],
+        ]);
+        $invalidSync->assertStatus(422)
+            ->assertJsonPath('success', false);
+
         // 6. Proctoring Integrity Event
         $integRes = $this->actingAs($this->user)->postJson("/api/v1/exam-attempts/{$attemptId}/integrity", [
             'event_type' => 'tab_switch',
@@ -417,5 +429,126 @@ class DedicatedLearningAndExamTest extends TestCase
         // Other user attempts to submit user's attempt
         $unauthSubmit = $this->actingAs($this->otherUser)->postJson("/api/v1/exam-attempts/{$attemptId}/submit");
         $unauthSubmit->assertStatus(403);
+    }
+
+    public function test_grading_uses_immutable_start_snapshot_even_if_question_modified(): void
+    {
+        $blueprint = ExamBlueprint::create([
+            'user_id' => $this->user->id,
+            'title' => 'Immutable Snapshot Test Exam',
+            'subject' => 'Architecture',
+            'duration_minutes' => 60,
+            'passing_score' => 70,
+            'is_published' => true,
+        ]);
+
+        $bank = QuestionBank::create([
+            'user_id' => $this->user->id,
+            'title' => 'Architecture Bank',
+            'subject' => 'Architecture',
+        ]);
+
+        $q = $bank->questions()->create([
+            'prompt' => 'What is ACID?',
+            'type' => 'multiple_choice_single',
+            'difficulty' => 'easy',
+            'points' => 10.0,
+            'explanation' => 'Original ACID explanation',
+        ]);
+
+        $optA = $q->options()->create([
+            'option_text' => 'Atomicity, Consistency, Isolation, Durability',
+            'is_correct' => true,
+            'order' => 1,
+        ]);
+        $optB = $q->options()->create([
+            'option_text' => 'Asynchronous, Concurrent, Isolated, Distributed',
+            'is_correct' => false,
+            'order' => 2,
+        ]);
+
+        $blueprint->questions()->attach($q->id, ['points' => 10.0, 'order' => 1]);
+
+        // 1. Student starts attempt
+        $startRes = $this->actingAs($this->user)->postJson("/api/v1/exam-blueprints/{$blueprint->id}/start");
+        $startRes->assertStatus(200);
+        $attemptId = $startRes->json('data.id');
+
+        // 2. Instructor flips the correct answer in the question bank AFTER attempt starts
+        $optA->update(['is_correct' => false]);
+        $optB->update(['is_correct' => true]);
+
+        // 3. Student answers with Option A (the authoritative correct answer at start time)
+        $syncRes = $this->actingAs($this->user)->postJson("/api/v1/exam-attempts/{$attemptId}/sync", [
+            'answers' => [
+                [
+                    'question_id' => $q->id,
+                    'selected_option_ids' => [$optA->id],
+                ],
+            ],
+        ]);
+        $syncRes->assertStatus(200);
+
+        // 4. Student submits attempt
+        $submitRes = $this->actingAs($this->user)->postJson("/api/v1/exam-attempts/{$attemptId}/submit");
+        $submitRes->assertStatus(200)
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.total_points_earned', 10)
+            ->assertJsonPath('data.score_percentage', 100)
+            ->assertJsonPath('data.is_passed', true);
+
+        // 5. Review reflects immutable snapshot correctness
+        $reviewRes = $this->actingAs($this->user)->getJson("/api/v1/exam-attempts/{$attemptId}/review");
+        $reviewRes->assertStatus(200)
+            ->assertJsonPath('data.questions.0.is_correct', true)
+            ->assertJsonPath('data.questions.0.points_awarded', 10)
+            ->assertJsonPath('data.questions.0.explanation', 'Original ACID explanation');
+
+        // 6. Test that grading and review remain immutable even if the Question is deleted from database
+        $q->options()->delete();
+        $q->delete();
+
+        // Start another attempt for a new blueprint with a question that gets deleted before submission
+        $q2 = $bank->questions()->create([
+            'prompt' => 'Question to be deleted',
+            'type' => 'multiple_choice_single',
+            'points' => 5.0,
+            'explanation' => 'Immutable explanation after delete',
+        ]);
+        $opt2A = $q2->options()->create(['option_text' => 'Correct', 'is_correct' => true, 'order' => 1]);
+        $blueprint2 = ExamBlueprint::create([
+            'user_id' => $this->user->id,
+            'title' => 'Delete Resilience Blueprint',
+            'subject' => 'Architecture',
+            'duration_minutes' => 30,
+            'is_published' => true,
+        ]);
+        $blueprint2->questions()->attach($q2->id, ['points' => 5.0, 'order' => 1]);
+
+        $attempt2Res = $this->actingAs($this->user)->postJson("/api/v1/exam-blueprints/{$blueprint2->id}/start");
+        $attempt2Id = $attempt2Res->json('data.id');
+
+        // Sync answer
+        $this->actingAs($this->user)->postJson("/api/v1/exam-attempts/{$attempt2Id}/sync", [
+            'answers' => [['question_id' => $q2->id, 'selected_option_ids' => [$opt2A->id]]],
+        ]);
+
+        // Delete question completely from database
+        $q2->options()->delete();
+        $q2->delete();
+
+        // Submit attempt - should grade from snapshot without error
+        $submit2Res = $this->actingAs($this->user)->postJson("/api/v1/exam-attempts/{$attempt2Id}/submit");
+        $submit2Res->assertStatus(200)
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.total_points_earned', 5)
+            ->assertJsonPath('data.is_passed', true);
+
+        // Review attempt - should load review from snapshot
+        $review2Res = $this->actingAs($this->user)->getJson("/api/v1/exam-attempts/{$attempt2Id}/review");
+        $review2Res->assertStatus(200)
+            ->assertJsonPath('data.questions.0.is_correct', true)
+            ->assertJsonPath('data.questions.0.points_awarded', 5)
+            ->assertJsonPath('data.questions.0.explanation', 'Immutable explanation after delete');
     }
 }

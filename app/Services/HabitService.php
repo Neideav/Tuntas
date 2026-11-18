@@ -82,13 +82,32 @@ class HabitService
     }
 
     /**
-     * Calculate current active streak backwards from today.
+     * Calculate current active streak according to habit frequency (daily, weekdays, weekly).
      */
     public function calculateStreak(Habit $habit): int
     {
+        $frequency = $habit->frequency ?? 'daily';
+
+        if ($frequency === 'weekdays') {
+            return $this->calculateWeekdaysStreak($habit);
+        }
+
+        if ($frequency === 'weekly') {
+            return $this->calculateWeeklyStreak($habit);
+        }
+
+        return $this->calculateDailyStreak($habit);
+    }
+
+    /**
+     * Streak calculation for daily frequency.
+     */
+    protected function calculateDailyStreak(Habit $habit): int
+    {
         $logs = HabitLog::where('habit_id', $habit->id)
-            ->where('is_completed', true)
-            ->orderBy('log_date', 'desc')
+            ->where(function ($q) {
+                $q->where('is_completed', true)->orWhere('used_freeze', true);
+            })
             ->pluck('log_date')
             ->map(fn($d) => Carbon::parse($d)->toDateString())
             ->flip()
@@ -98,8 +117,6 @@ class HabitService
         $todayStr = $today->toDateString();
         $yesterdayStr = $today->copy()->subDay()->toDateString();
 
-        // If today is completed, streak starts from today.
-        // If today is not completed yet, streak might be active from yesterday.
         if (isset($logs[$todayStr])) {
             $cursor = $today;
         } elseif (isset($logs[$yesterdayStr])) {
@@ -115,18 +132,119 @@ class HabitService
                 $streak++;
                 $cursor->subDay();
             } else {
-                // Check if freeze token was used for this date
-                $freezeLog = HabitLog::where('habit_id', $habit->id)
-                    ->whereDate('log_date', $dateStr)
-                    ->where('used_freeze', true)
-                    ->exists();
+                break;
+            }
+        }
 
-                if ($freezeLog) {
-                    $streak++;
-                    $cursor->subDay();
-                } else {
-                    break;
+        return $streak;
+    }
+
+    /**
+     * Streak calculation for weekdays frequency (Monday-Friday only).
+     */
+    protected function calculateWeekdaysStreak(Habit $habit): int
+    {
+        $logs = HabitLog::where('habit_id', $habit->id)
+            ->where(function ($q) {
+                $q->where('is_completed', true)->orWhere('used_freeze', true);
+            })
+            ->pluck('log_date')
+            ->map(fn($d) => Carbon::parse($d)->toDateString())
+            ->flip()
+            ->all();
+
+        $today = Carbon::today();
+
+        if ($today->isWeekday()) {
+            $todayStr = $today->toDateString();
+            if (isset($logs[$todayStr])) {
+                $cursor = $today->copy();
+            } else {
+                // If today is not completed yet, check the most recent preceding weekday
+                $prevWeekday = $today->copy()->subDay();
+                while ($prevWeekday->isWeekend()) {
+                    $prevWeekday->subDay();
                 }
+                if (isset($logs[$prevWeekday->toDateString()])) {
+                    $cursor = $prevWeekday;
+                } else {
+                    return 0;
+                }
+            }
+        } else {
+            // Today is weekend (Saturday or Sunday) — weekend is not required.
+            // Check the last Friday.
+            $lastFriday = $today->copy();
+            while ($lastFriday->isWeekend()) {
+                $lastFriday->subDay();
+            }
+            if (isset($logs[$lastFriday->toDateString()])) {
+                $cursor = $lastFriday;
+            } else {
+                return 0;
+            }
+        }
+
+        $streak = 0;
+        while (true) {
+            $dateStr = $cursor->toDateString();
+            if (isset($logs[$dateStr])) {
+                $streak++;
+                // Move cursor to previous weekday
+                $cursor->subDay();
+                while ($cursor->isWeekend()) {
+                    $cursor->subDay();
+                }
+            } else {
+                break;
+            }
+        }
+
+        return $streak;
+    }
+
+    /**
+     * Streak calculation for weekly frequency (at least once per ISO calendar week).
+     */
+    protected function calculateWeeklyStreak(Habit $habit): int
+    {
+        $rawLogs = HabitLog::where('habit_id', $habit->id)
+            ->where(function ($q) {
+                $q->where('is_completed', true)->orWhere('used_freeze', true);
+            })
+            ->pluck('log_date');
+
+        if ($rawLogs->isEmpty()) {
+            return 0;
+        }
+
+        $completedWeeks = [];
+        foreach ($rawLogs as $logDate) {
+            $weekKey = Carbon::parse($logDate)->format('o-W');
+            $completedWeeks[$weekKey] = true;
+        }
+
+        $today = Carbon::today();
+        $thisWeekKey = $today->format('o-W');
+        $lastWeek = $today->copy()->subWeek();
+        $lastWeekKey = $lastWeek->format('o-W');
+
+        if (isset($completedWeeks[$thisWeekKey])) {
+            $cursorWeek = $today->copy();
+        } elseif (isset($completedWeeks[$lastWeekKey])) {
+            $cursorWeek = $lastWeek->copy();
+        } else {
+            return 0;
+        }
+
+        $streak = 0;
+        while (true) {
+            $key = $cursorWeek->format('o-W');
+            if (isset($completedWeeks[$key])) {
+                $streak++;
+                $cursorWeek->subWeek();
+            } else {
+                break;
             }
         }
 
@@ -138,29 +256,74 @@ class HabitService
      */
     public function useFreezeToken(Habit $habit, string $date): HabitLog
     {
-        if ($habit->freeze_tokens <= 0) {
-            throw new \RuntimeException('No freeze tokens available for this habit.');
+        try {
+            $parsedDate = Carbon::parse($date)->startOfDay();
+        } catch (\Exception $e) {
+            throw new \InvalidArgumentException('Format tanggal tidak valid.');
         }
 
-        return DB::transaction(function () use ($habit, $date) {
-            $habit->decrement('freeze_tokens');
+        $today = Carbon::today();
+        if ($parsedDate->greaterThan($today)) {
+            throw new \InvalidArgumentException('Token pembeku (freeze token) tidak dapat digunakan untuk tanggal di masa depan.');
+        }
 
-            $log = HabitLog::updateOrCreate(
-                ['habit_id' => $habit->id, 'log_date' => $date],
-                [
-                    'user_id' => $habit->user_id,
+        $formattedDate = $parsedDate->toDateString();
+
+        return DB::transaction(function () use ($habit, $formattedDate) {
+            // Atomically lock the habit row to prevent concurrent race condition exploits
+            $lockedHabit = Habit::where('id', $habit->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedHabit->freeze_tokens <= 0) {
+                throw new \RuntimeException('Tidak ada token pembeku (freeze tokens) yang tersedia untuk habit ini.');
+            }
+
+            // Check previous log for this date with locking
+            $existingLog = HabitLog::where('habit_id', $lockedHabit->id)
+                ->where('log_date', $formattedDate)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingLog) {
+                if ($existingLog->used_freeze) {
+                    throw new \RuntimeException('Token pembeku sudah pernah digunakan untuk tanggal ini.');
+                }
+                if ($existingLog->is_completed) {
+                    throw new \RuntimeException('Habit sudah berhasil diselesaikan pada tanggal ini, token pembeku tidak diperlukan.');
+                }
+            }
+
+            // Decrement freeze token atomically
+            $lockedHabit->decrement('freeze_tokens');
+
+            // Apply freeze to habit log
+            if ($existingLog) {
+                $existingLog->update([
                     'value' => 0,
                     'is_completed' => false,
                     'used_freeze' => true,
                     'notes' => 'Streak Freeze Token Applied',
-                ]
-            );
+                ]);
+                $log = $existingLog;
+            } else {
+                $log = HabitLog::create([
+                    'habit_id' => $lockedHabit->id,
+                    'user_id' => $lockedHabit->user_id,
+                    'log_date' => $formattedDate,
+                    'value' => 0,
+                    'is_completed' => false,
+                    'used_freeze' => true,
+                    'notes' => 'Streak Freeze Token Applied',
+                ]);
+            }
 
-            $streak = $this->calculateStreak($habit);
-            $habit->update([
+            // Recalculate streak
+            $streak = $this->calculateStreak($lockedHabit);
+            $lockedHabit->update([
                 'current_streak' => $streak,
-                'best_streak' => max($streak, $habit->best_streak),
+                'best_streak' => max($streak, $lockedHabit->best_streak),
             ]);
+
+            $habit->refresh();
 
             return $log;
         });

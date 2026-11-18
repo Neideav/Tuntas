@@ -83,30 +83,67 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 api.interceptors.response.use(
   (response: AxiosResponse) => {
-    // Invalidate related caches on mutating operations
+    // Invalidate related caches on mutating operations (BUG-08)
     const method = response.config.method?.toLowerCase();
     const url = response.config.url || '';
 
     if (method && ['post', 'put', 'patch', 'delete'].includes(method)) {
       if (url.includes('/tasks') || url.includes('/subtasks')) {
         invalidateApiCache('/tasks');
+        invalidateApiCache('/projects');
         invalidateApiCache('/dashboard');
         invalidateApiCache('/analytics');
         invalidateApiCache('/calendar');
+        invalidateApiCache('/activity');
       } else if (url.includes('/habits')) {
         invalidateApiCache('/habits');
         invalidateApiCache('/dashboard');
         invalidateApiCache('/analytics');
+        invalidateApiCache('/calendar');
+        invalidateApiCache('/activity');
       } else if (url.includes('/projects')) {
         invalidateApiCache('/projects');
+        invalidateApiCache('/tasks');
         invalidateApiCache('/dashboard');
-      } else if (url.includes('/goals')) {
+        invalidateApiCache('/analytics');
+        invalidateApiCache('/calendar');
+        invalidateApiCache('/activity');
+      } else if (url.includes('/goals') || url.includes('/milestones')) {
         invalidateApiCache('/goals');
+        invalidateApiCache('/milestones');
         invalidateApiCache('/dashboard');
-      } else if (url.includes('/exam') || url.includes('/question-bank') || url.includes('/courses')) {
+        invalidateApiCache('/analytics');
+        invalidateApiCache('/activity');
+      } else if (
+        url.includes('/courses') ||
+        url.includes('/modules') ||
+        url.includes('/lessons') ||
+        url.includes('/learning-sessions')
+      ) {
+        invalidateApiCache('/courses');
+        invalidateApiCache('/modules');
+        invalidateApiCache('/lessons');
+        invalidateApiCache('/learning-sessions');
+        invalidateApiCache('/learning-analytics');
+        invalidateApiCache('/analytics');
+        invalidateApiCache('/dashboard');
+        invalidateApiCache('/calendar');
+        invalidateApiCache('/activity');
+      } else if (
+        url.includes('/exam') ||
+        url.includes('/question-bank') ||
+        url.includes('/examinations')
+      ) {
         invalidateApiCache('/examinations');
-        invalidateApiCache('/learning');
+        invalidateApiCache('/exam-blueprints');
+        invalidateApiCache('/exam-attempts');
+        invalidateApiCache('/exam-grading');
+        invalidateApiCache('/question-banks');
+        invalidateApiCache('/learning-analytics');
+        invalidateApiCache('/analytics');
         invalidateApiCache('/dashboard');
+        invalidateApiCache('/calendar');
+        invalidateApiCache('/activity');
       } else if (url.includes('/notifications')) {
         invalidateApiCache('/notifications');
         invalidateApiCache('/dashboard');
@@ -114,6 +151,14 @@ api.interceptors.response.use(
         invalidateApiCache('/categories');
         invalidateApiCache('/tags');
         invalidateApiCache('/tasks');
+        invalidateApiCache('/projects');
+        invalidateApiCache('/goals');
+        invalidateApiCache('/courses');
+        invalidateApiCache('/examinations');
+        invalidateApiCache('/dashboard');
+      } else if (url.includes('/settings') || url.includes('/profile')) {
+        invalidateApiCache('/settings');
+        invalidateApiCache('/auth/me');
         invalidateApiCache('/dashboard');
       } else if (url.includes('/auth')) {
         apiCache.clear();
