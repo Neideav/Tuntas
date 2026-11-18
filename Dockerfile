@@ -31,16 +31,20 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction
 # Install Node dependencies & build Next.js frontend
 RUN pnpm install --frozen-lockfile && pnpm run build
 
-# Prepare storage directories and SQLite database file
+# Prepare storage directories and SQLite database directory
 RUN mkdir -p storage/framework/cache/data \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs \
-    database \
-    && touch database/database.sqlite \
+    bootstrap/cache \
+    database/data \
+    && touch database/data/database.sqlite \
     && chmod -R 777 storage bootstrap/cache database
+
+# Setup entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8000 3000
 
-CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"]
-
+ENTRYPOINT ["docker-entrypoint.sh"]

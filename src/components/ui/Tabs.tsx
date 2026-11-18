@@ -36,14 +36,14 @@ export function Tabs({
             onClick={() => onChange(tab.id)}
             className={`group relative flex items-center gap-2 px-4 py-2.5 text-xs font-semibold transition-colors cursor-pointer select-none ${
               isActive
-                ? 'text-sky-600'
+                ? 'text-slate-900 font-bold'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             {tab.icon && (
               <span
                 className={`transition-colors ${
-                  isActive ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'
+                  isActive ? 'text-slate-900' : 'text-slate-400 group-hover:text-slate-600'
                 }`}
               >
                 {tab.icon}
@@ -54,7 +54,7 @@ export function Tabs({
               <span
                 className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
                   isActive
-                    ? 'bg-sky-100 text-sky-700'
+                    ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
                 }`}
               >
@@ -66,7 +66,7 @@ export function Tabs({
               <motion.span
                 layoutId={layoutId}
                 transition={SPRING_TRANSITIONS.tight}
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-600 rounded-full"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900 rounded-full"
               />
             )}
           </button>

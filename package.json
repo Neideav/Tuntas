@@ -10,7 +10,7 @@
     "dev:api": "php artisan serve",
     "dev:web": "next dev src -p 3000",
     "build": "next build src",
-    "start": "next start src -p 3000",
+    "start": "next start src -p 3000 -H 0.0.0.0",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "php artisan test",

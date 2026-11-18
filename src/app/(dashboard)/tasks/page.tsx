@@ -24,6 +24,7 @@ import {
   FileText,
   Hourglass,
   FileSearch,
+  Check,
 } from 'lucide-react';
 import api, { getCachedData } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
@@ -281,6 +282,26 @@ export default function TasksPage() {
     }
   };
 
+  const handleQuickToggleTask = async (task: Task) => {
+    const newStatus: Task['status'] = task.status === 'completed' ? 'todo' : 'completed';
+    setTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t))
+    );
+    try {
+      const res = await api.patch(`/tasks/${task.id}/toggle`);
+      if (!res.data?.success) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
+      );
+    }
+  };
+
   const handleDeleteTask = async (taskId: number) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
     try {
@@ -309,6 +330,44 @@ export default function TasksPage() {
       return matchesSearch && matchesPriority && matchesTag;
     });
   }, [tasks, searchQuery, priorityFilter, selectedTagFilter]);
+
+  const timelineBuckets = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const nextWeekEnd = new Date(todayEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const overdue: Task[] = [];
+    const today: Task[] = [];
+    const thisWeek: Task[] = [];
+    const later: Task[] = [];
+    const noDate: Task[] = [];
+
+    filteredTasks.forEach((task) => {
+      if (!task.due_date) {
+        noDate.push(task);
+        return;
+      }
+      const dueDate = new Date(task.due_date);
+      if (dueDate < todayStart && task.status !== 'completed') {
+        overdue.push(task);
+      } else if (dueDate >= todayStart && dueDate <= todayEnd) {
+        today.push(task);
+      } else if (dueDate > todayEnd && dueDate <= nextWeekEnd) {
+        thisWeek.push(task);
+      } else {
+        later.push(task);
+      }
+    });
+
+    return [
+      { id: 'overdue', label: 'Overdue Deadlines', color: 'bg-rose-500', badgeBg: 'bg-rose-50 text-rose-700 border-rose-200', tasks: overdue },
+      { id: 'today', label: "Today's Schedule", color: 'bg-sky-500', badgeBg: 'bg-sky-50 text-sky-700 border-sky-200', tasks: today },
+      { id: 'thisWeek', label: 'Upcoming This Week', color: 'bg-purple-500', badgeBg: 'bg-purple-50 text-purple-700 border-purple-200', tasks: thisWeek },
+      { id: 'later', label: 'Later & Beyond', color: 'bg-emerald-500', badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200', tasks: later },
+      { id: 'noDate', label: 'No Deadline Specified', color: 'bg-slate-400', badgeBg: 'bg-slate-100 text-slate-600 border-slate-200', tasks: noDate },
+    ].filter((b) => b.tasks.length > 0);
+  }, [filteredTasks]);
 
   const viewTabs = [
     { id: 'kanban', label: 'Kanban', icon: <KanbanIcon className="h-4 w-4" /> },
@@ -632,9 +691,9 @@ export default function TasksPage() {
             );
           })}
         </div>
-      ) : (
-        /* TABLE / LIST VIEW */
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+      ) : viewMode === 'table' ? (
+        /* TABLE VIEW */
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -698,6 +757,203 @@ export default function TasksPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      ) : viewMode === 'list' ? (
+        /* DEDICATED LIST VIEW */
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100 overflow-hidden">
+          {filteredTasks.map((task) => {
+            const isCompleted = task.status === 'completed';
+            const totalSubs = task.subtasks?.length || 0;
+            const completedSubs = task.subtasks?.filter((s) => s.is_completed).length || 0;
+
+            return (
+              <div
+                key={task.id}
+                onClick={() => openTaskDetail(task)}
+                className="flex items-center justify-between p-4 hover:bg-slate-50/80 transition cursor-pointer group"
+              >
+                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleQuickToggleTask(task);
+                    }}
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition cursor-pointer ${
+                      isCompleted
+                        ? 'bg-emerald-600 border-emerald-600 text-white'
+                        : 'border-slate-300 hover:border-slate-900 bg-white'
+                    }`}
+                  >
+                    {isCompleted && <Check className="h-3.5 w-3.5" />}
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4
+                        className={`text-sm font-semibold truncate ${
+                          isCompleted ? 'line-through text-slate-400' : 'text-slate-900'
+                        }`}
+                      >
+                        {task.title}
+                      </h4>
+                      {task.project && (
+                        <span className="shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {task.project.title}
+                        </span>
+                      )}
+                      {task.category && (
+                        <span className="shrink-0 text-[10px] font-semibold text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                          {task.category.name}
+                        </span>
+                      )}
+                    </div>
+
+                    {task.description && (
+                      <p className="text-xs text-slate-500 truncate mt-0.5">
+                        {task.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0 ml-4">
+                  {totalSubs > 0 && (
+                    <span className="text-[11px] font-medium text-slate-500 hidden sm:flex items-center gap-1">
+                      <ListChecks className="h-3.5 w-3.5 text-slate-400" />
+                      {completedSubs}/{totalSubs}
+                    </span>
+                  )}
+
+                  <Badge variant={task.priority}>{task.priority}</Badge>
+                  <Badge variant={task.status}>{task.status.replace('_', ' ')}</Badge>
+
+                  {task.due_date && (
+                    <span className="text-xs text-slate-500 hidden sm:flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      {new Date(task.due_date).toLocaleDateString()}
+                    </span>
+                  )}
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteTask(task.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition"
+                    title="Delete task"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* DEDICATED TIMELINES VIEW */
+        <div className="space-y-8 relative pl-6 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
+          {timelineBuckets.map((bucket) => (
+            <div key={bucket.id} className="relative space-y-3">
+              {/* Milestone node on timeline */}
+              <div className="flex items-center gap-3">
+                <div
+                  className={`absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2 border-white ${bucket.color} ring-4 ring-slate-100`}
+                />
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                    {bucket.label}
+                  </h3>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${bucket.badgeBg}`}
+                  >
+                    {bucket.tasks.length} {bucket.tasks.length === 1 ? 'task' : 'tasks'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Bucket Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {bucket.tasks.map((task) => {
+                  const isCompleted = task.status === 'completed';
+                  const totalSubs = task.subtasks?.length || 0;
+                  const completedSubs =
+                    task.subtasks?.filter((s) => s.is_completed).length || 0;
+                  const progress =
+                    totalSubs > 0 ? Math.round((completedSubs / totalSubs) * 100) : 0;
+
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => openTaskDetail(task)}
+                      className="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-slate-300 transition cursor-pointer space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                          <Clock className="h-3 w-3 text-slate-400" />
+                          <span>
+                            {task.due_date
+                              ? new Date(task.due_date).toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : 'No deadline'}
+                          </span>
+                        </div>
+                        <Badge variant={task.priority}>{task.priority}</Badge>
+                      </div>
+
+                      <div>
+                        <h4
+                          className={`text-sm font-bold truncate ${
+                            isCompleted ? 'line-through text-slate-400' : 'text-slate-900'
+                          }`}
+                        >
+                          {task.title}
+                        </h4>
+                        {task.project && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                            📁 {task.project.title}
+                          </p>
+                        )}
+                      </div>
+
+                      {totalSubs > 0 && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-500 font-semibold">
+                            <span>Subtasks</span>
+                            <span>
+                              {completedSubs}/{totalSubs} ({progress}%)
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-slate-900 rounded-full transition-all duration-300"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <Badge variant={task.status}>{task.status.replace('_', ' ')}</Badge>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickToggleTask(task);
+                          }}
+                          className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                        >
+                          {isCompleted ? 'Mark Pending' : 'Mark Complete ✓'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

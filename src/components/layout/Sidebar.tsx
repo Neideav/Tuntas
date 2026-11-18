@@ -456,14 +456,14 @@ export function Sidebar() {
                           isCollapsed ? 'justify-center' : 'justify-between'
                         } ${
                           isActive
-                            ? 'text-sky-700 font-bold'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                            ? 'text-white font-bold'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                         }`}
                       >
                         {isActive && (
                           <motion.span
                             layoutId="active-sidebar-pill"
-                            className="absolute inset-0 bg-sky-50 rounded-xl border border-sky-200/80 shadow-2xs -z-0"
+                            className="absolute inset-0 bg-slate-900 rounded-xl shadow-xs -z-0"
                             transition={SPRING_TRANSITIONS.tight}
                           />
                         )}
@@ -471,7 +471,7 @@ export function Sidebar() {
                         <div className="relative z-10 flex items-center gap-2.5 truncate">
                           <Icon
                             className={`h-4 w-4 shrink-0 transition-colors ${
-                              isActive ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-700'
+                              isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
                             }`}
                           />
                           <AnimatePresence initial={false}>
@@ -549,8 +549,8 @@ export function Sidebar() {
                   <div
                     className={`flex items-center justify-between rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
                       isCategoryActive
-                        ? 'bg-sky-50 text-sky-700 border border-sky-200/80 shadow-2xs font-bold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+                        ? 'bg-slate-900 text-white shadow-xs font-bold'
+                        : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 border border-transparent'
                     }`}
                   >
                     <Link
@@ -707,20 +707,20 @@ export function Sidebar() {
                   isCollapsed ? 'justify-center' : ''
                 } ${
                   pathname === '/settings'
-                    ? 'text-sky-700 font-bold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'text-white font-bold'
+                    : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
                 }`}
               >
                 {pathname === '/settings' && (
                   <motion.span
                     layoutId="active-sidebar-pill"
-                    className="absolute inset-0 bg-sky-50 rounded-xl border border-sky-200/80 shadow-2xs -z-0"
+                    className="absolute inset-0 bg-slate-900 rounded-xl shadow-xs -z-0"
                     transition={SPRING_TRANSITIONS.tight}
                   />
                 )}
                 <Settings
                   className={`relative z-10 h-4 w-4 shrink-0 transition-colors ${
-                    pathname === '/settings' ? 'text-sky-600' : 'text-slate-400'
+                    pathname === '/settings' ? 'text-white' : 'text-slate-400'
                   }`}
                 />
                 <AnimatePresence initial={false}>
