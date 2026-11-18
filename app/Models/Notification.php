@@ -17,11 +17,15 @@ class Notification extends Model
         'action_url',
         'is_read',
         'read_at',
+        'is_archived',
+        'archived_at',
     ];
 
     protected $casts = [
         'is_read' => 'boolean',
         'read_at' => 'datetime',
+        'is_archived' => 'boolean',
+        'archived_at' => 'datetime',
     ];
 
     public function user()

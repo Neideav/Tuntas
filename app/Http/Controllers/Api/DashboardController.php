@@ -13,11 +13,19 @@ use App\Models\LearningSession;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\Task;
+use App\Services\AnalyticsService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    protected AnalyticsService $analyticsService;
+
+    public function __construct(AnalyticsService $analyticsService)
+    {
+        $this->analyticsService = $analyticsService;
+    }
+
     /**
      * Compute comprehensive cross-domain personal dashboard metrics.
      */
@@ -194,10 +202,14 @@ class DashboardController extends Controller
             'upcoming_exams_count' => $upcomingExams->count(),
         ];
 
+        $productivityData = $this->analyticsService->getProductivityAnalytics($request->user(), ['range' => 'this_week']);
+        $insights = $productivityData['insights'] ?? [];
+
         return response()->json([
             'success' => true,
             'data' => [
                 'summary' => $summary,
+                'insights' => $insights,
                 'metrics' => [
                     'tasks_completed_count' => $completedTasks,
                     'tasks_in_progress_count' => $inProgressTasks,

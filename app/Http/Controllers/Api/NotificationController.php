@@ -3,21 +3,35 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Examination;
 use App\Models\Notification;
-use App\Models\Task;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
-     * List user notifications with filtering by type, status, and category counts.
+     * List user notifications with filtering by type, read status, archive status, and category counts.
      */
     public function index(Request $request)
     {
         $userId = $request->user()->id;
         $query = Notification::where('user_id', $userId);
+
+        // Filter by archive status (default to active non-archived notifications)
+        if ($request->has('is_archived') && $request->is_archived !== 'all') {
+            $isArchived = filter_var($request->is_archived, FILTER_VALIDATE_BOOLEAN);
+            $query->where('is_archived', $isArchived);
+        } else {
+            $query->where('is_archived', false);
+        }
 
         if ($request->filled('type') && $request->type !== 'all') {
             $query->where('type', $request->type);
@@ -28,13 +42,16 @@ class NotificationController extends Controller
             $query->where('is_read', $isRead);
         }
 
-        $notifications = $query->latest()->paginate(25);
+        $perPage = min(100, max(10, (int) $request->input('per_page', 25)));
+        $notifications = $query->latest('id')->paginate($perPage);
 
         $unreadCount = Notification::where('user_id', $userId)
+            ->where('is_archived', false)
             ->where('is_read', false)
             ->count();
 
         $categoryCounts = Notification::where('user_id', $userId)
+            ->where('is_archived', false)
             ->where('is_read', false)
             ->selectRaw('type, count(*) as count')
             ->groupBy('type')
@@ -49,6 +66,7 @@ class NotificationController extends Controller
             'meta' => [
                 'current_page' => $notifications->currentPage(),
                 'last_page' => $notifications->lastPage(),
+                'per_page' => $notifications->perPage(),
                 'total' => $notifications->total(),
             ],
         ]);
@@ -62,7 +80,7 @@ class NotificationController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'message' => 'required|string',
-            'type' => 'nullable|in:system,deadline,exam,habit,achievement',
+            'type' => 'nullable|in:system,deadline,exam,habit,achievement,goal,learning',
             'action_url' => 'nullable|string|max:255',
         ]);
 
@@ -92,6 +110,7 @@ class NotificationController extends Controller
             'type' => $type,
             'action_url' => $actionUrl,
             'is_read' => false,
+            'is_archived' => false,
         ]);
 
         return response()->json([
@@ -107,7 +126,7 @@ class NotificationController extends Controller
     public function markAsRead(Request $request, Notification $notification)
     {
         if ($notification->user_id !== $request->user()->id) {
-            abort(403);
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
         $notification->update([
@@ -140,12 +159,54 @@ class NotificationController extends Controller
     }
 
     /**
+     * Archive/dismiss a notification.
+     */
+    public function archive(Request $request, Notification $notification)
+    {
+        if ($notification->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $notification->update([
+            'is_archived' => true,
+            'archived_at' => Carbon::now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notification archived',
+            'data' => $notification,
+        ]);
+    }
+
+    /**
+     * Unarchive a notification.
+     */
+    public function unarchive(Request $request, Notification $notification)
+    {
+        if ($notification->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $notification->update([
+            'is_archived' => false,
+            'archived_at' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notification unarchived',
+            'data' => $notification,
+        ]);
+    }
+
+    /**
      * Delete a notification.
      */
     public function destroy(Request $request, Notification $notification)
     {
         if ($notification->user_id !== $request->user()->id) {
-            abort(403);
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
         $notification->delete();
@@ -157,80 +218,60 @@ class NotificationController extends Controller
     }
 
     /**
-     * Scan upcoming deadlines and examinations to generate reminders without duplicates.
+     * Get user notification preferences.
      */
-    public function generateDeadlineReminders(Request $request)
+    public function getPreferences(Request $request)
     {
-        $userId = $request->user()->id;
-        $now = Carbon::now();
-        $in24Hours = $now->copy()->addHours(24);
-        $in48Hours = $now->copy()->addHours(48);
-
-        $createdReminders = 0;
-
-        // 1. Task Deadlines (<24 hours)
-        $impendingTasks = Task::where('user_id', $userId)
-            ->whereIn('status', ['todo', 'in_progress'])
-            ->whereNotNull('due_date')
-            ->whereBetween('due_date', [$now, $in24Hours])
-            ->get();
-
-        foreach ($impendingTasks as $task) {
-            $actionUrl = "/tasks?id={$task->id}";
-
-            // Check if reminder was already generated in the past 24 hours
-            $existing = Notification::where('user_id', $userId)
-                ->where('type', 'deadline')
-                ->where('action_url', $actionUrl)
-                ->where('created_at', '>=', $now->copy()->subHours(24))
-                ->exists();
-
-            if (!$existing) {
-                Notification::create([
-                    'user_id' => $userId,
-                    'title' => "Upcoming Deadline: {$task->title}",
-                    'message' => "Task '{$task->title}' is due within 24 hours ({$task->due_date->format('M d, H:i')}).",
-                    'type' => 'deadline',
-                    'action_url' => $actionUrl,
-                    'is_read' => false,
-                ]);
-                $createdReminders++;
-            }
-        }
-
-        // 2. Examination Schedules (<48 hours)
-        $impendingExams = Examination::where('user_id', $userId)
-            ->whereIn('status', ['upcoming', 'preparing'])
-            ->whereBetween('examination_date', [$now->toDateString(), $in48Hours->toDateString()])
-            ->get();
-
-        foreach ($impendingExams as $exam) {
-            $actionUrl = "/examinations?id={$exam->id}";
-
-            $existing = Notification::where('user_id', $userId)
-                ->where('type', 'exam')
-                ->where('action_url', $actionUrl)
-                ->where('created_at', '>=', $now->copy()->subHours(48))
-                ->exists();
-
-            if (!$existing) {
-                Notification::create([
-                    'user_id' => $userId,
-                    'title' => "Exam Scheduled: {$exam->title}",
-                    'message' => "Examination '{$exam->title}' ({$exam->subject}) is approaching on {$exam->examination_date->format('M d, Y')}.",
-                    'type' => 'exam',
-                    'action_url' => $actionUrl,
-                    'is_read' => false,
-                ]);
-                $createdReminders++;
-            }
-        }
+        $prefs = $this->notificationService->getPreferences($request->user());
 
         return response()->json([
             'success' => true,
-            'message' => "Generated {$createdReminders} new deadline reminders",
+            'data' => $prefs,
+        ]);
+    }
+
+    /**
+     * Update user notification preferences.
+     */
+    public function updatePreferences(Request $request)
+    {
+        $validated = $request->validate([
+            'email_notifications' => 'nullable|boolean',
+            'in_app_notifications' => 'nullable|boolean',
+            'daily_digest' => 'nullable|boolean',
+            'timezone' => 'nullable|string|max:50',
+            'task_reminders' => 'nullable|boolean',
+            'project_reminders' => 'nullable|boolean',
+            'habit_reminders' => 'nullable|boolean',
+            'goal_reminders' => 'nullable|boolean',
+            'learning_reminders' => 'nullable|boolean',
+            'exam_reminders' => 'nullable|boolean',
+            'preferred_reminder_time' => 'nullable|string|regex:/^\d{2}:\d{2}$/',
+            'quiet_hours_start' => 'nullable|string|regex:/^\d{2}:\d{2}$/',
+            'quiet_hours_end' => 'nullable|string|regex:/^\d{2}:\d{2}$/',
+        ]);
+
+        $updated = $this->notificationService->updatePreferences($request->user(), $validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notification preferences updated successfully',
+            'data' => $updated,
+        ]);
+    }
+
+    /**
+     * Scan upcoming tasks, projects, habits, goals, and exams to generate reminders without duplicates.
+     */
+    public function generateDeadlineReminders(Request $request)
+    {
+        $created = $this->notificationService->generateRemindersForUser($request->user());
+
+        return response()->json([
+            'success' => true,
+            'message' => "Generated {$created} new reminders",
             'data' => [
-                'reminders_created' => $createdReminders,
+                'reminders_created' => $created,
             ],
         ]);
     }

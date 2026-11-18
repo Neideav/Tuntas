@@ -20,6 +20,8 @@ import {
   Plus,
   ArrowRight,
   Check,
+  Lightbulb,
+  AlertTriangle,
 } from 'lucide-react';
 import api, { getCachedData } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -225,6 +227,41 @@ export default function DashboardPage() {
           </div>
         </div>
       </FadeIn>
+
+      {/* Transparent Rule-Based Insights Banner */}
+      {data.insights && data.insights.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {data.insights.slice(0, 2).map((ins: any) => (
+            <div
+              key={ins.id}
+              className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
+                ins.type === 'warning'
+                  ? 'bg-rose-50/70 border-rose-200 text-rose-950'
+                  : ins.type === 'success'
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                  : 'bg-slate-50 border-slate-200 text-slate-900'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {ins.type === 'warning' ? (
+                  <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                ) : ins.type === 'success' ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <Lightbulb className="h-4 w-4 text-amber-500 shrink-0" />
+                )}
+                <div>
+                  <span className="font-bold block">{ins.title}</span>
+                  <span className="text-[11px] opacity-90">{ins.message}</span>
+                </div>
+              </div>
+              <Link href="/analytics" className="shrink-0 text-[11px] font-bold underline hover:opacity-80">
+                Detail
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 5 Core Metrics Cards: Clickable to Features with Staggered Entrance & Animated Numbers */}
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">

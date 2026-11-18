@@ -92,14 +92,19 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('tags', TagController::class)->only(['index', 'store', 'update', 'destroy']);
 
         // Notifications
+        Route::get('/notifications/preferences', [NotificationController::class, 'getPreferences']);
+        Route::put('/notifications/preferences', [NotificationController::class, 'updatePreferences']);
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::post('/notifications', [NotificationController::class, 'store']);
         Route::post('/notifications/check-reminders', [NotificationController::class, 'generateDeadlineReminders']);
         Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
+        Route::patch('/notifications/{notification}/archive', [NotificationController::class, 'archive']);
+        Route::patch('/notifications/{notification}/unarchive', [NotificationController::class, 'unarchive']);
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
         Route::delete('/notifications/{notification}', [NotificationController::class, 'destroy']);
 
         // Analytics Engine
+        Route::get('/analytics/export', [AnalyticsController::class, 'export']);
         Route::get('/analytics/productivity', [AnalyticsController::class, 'productivity']);
         Route::get('/analytics/learning', [AnalyticsController::class, 'learning']);
 

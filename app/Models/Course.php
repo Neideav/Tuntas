@@ -52,6 +52,11 @@ class Course extends Model
         return $this->hasMany(LearningSession::class);
     }
 
+    public function learningSessions()
+    {
+        return $this->sessions();
+    }
+
     public function examBlueprints()
     {
         return $this->hasMany(ExamBlueprint::class);
