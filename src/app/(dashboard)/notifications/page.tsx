@@ -150,9 +150,9 @@ export default function NotificationsPage() {
           <button
             key={cat.id}
             onClick={() => setActiveCategory(cat.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
               activeCategory === cat.id
-                ? 'bg-sky-600 text-white shadow-xs'
+                ? 'bg-slate-900 text-white shadow-xs font-bold'
                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >

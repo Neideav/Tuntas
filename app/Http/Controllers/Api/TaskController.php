@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Goal;
 use App\Models\Project;
 use App\Models\Subtask;
 use App\Models\Tag;
@@ -21,7 +22,7 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $query = Task::where('user_id', $request->user()->id)
-            ->with(['category', 'project', 'subtasks', 'tags']);
+            ->with(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']);
 
         // Filter by Status
         if ($request->filled('status') && $request->status !== 'all') {
@@ -41,6 +42,11 @@ class TaskController extends Controller
         // Filter by Project
         if ($request->filled('project_id')) {
             $query->where('project_id', $request->project_id);
+        }
+
+        // Filter by Goal
+        if ($request->filled('goal_id')) {
+            $query->where('goal_id', $request->goal_id);
         }
 
         // Filter by Tag
@@ -114,8 +120,12 @@ class TaskController extends Controller
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
             ],
-            'due_date' => 'nullable|date',
+            'goal_id' => [
+                'nullable',
+                Rule::exists('goals', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
             'start_date' => 'nullable|date',
+            'due_date' => 'nullable|date|after_or_equal:start_date',
             'reminder_at' => 'nullable|date',
             'is_recurring' => 'nullable|boolean',
             'recurrence_pattern' => 'nullable|in:daily,weekly,monthly',
@@ -123,6 +133,11 @@ class TaskController extends Controller
             'subtasks.*.title' => 'required|string|max:255',
             'tags' => 'nullable|array',
             'tags.*' => 'string|max:50',
+            'dependencies' => 'nullable|array',
+            'dependencies.*' => [
+                'integer',
+                Rule::exists('tasks', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
         ]);
 
         $task = DB::transaction(function () use ($request, $validated) {
@@ -130,6 +145,7 @@ class TaskController extends Controller
                 'user_id' => $request->user()->id,
                 'project_id' => $validated['project_id'] ?? null,
                 'category_id' => $validated['category_id'] ?? null,
+                'goal_id' => $validated['goal_id'] ?? null,
                 'title' => $validated['title'],
                 'description' => $validated['description'] ?? null,
                 'status' => $validated['status'] ?? 'todo',
@@ -152,6 +168,11 @@ class TaskController extends Controller
                 }
             }
 
+            // Dependencies
+            if (!empty($validated['dependencies'])) {
+                $task->dependencies()->sync($validated['dependencies']);
+            }
+
             // Tags
             if (!empty($validated['tags'])) {
                 $tagIds = [];
@@ -167,7 +188,12 @@ class TaskController extends Controller
 
             // Recalculate project progress if associated
             if ($task->project_id) {
-                $task->project->updateProgress();
+                $task->project?->updateProgress();
+            }
+
+            // Recalculate goal progress if associated
+            if ($task->goal_id) {
+                $task->goal?->recalculateProgress();
             }
 
             // Audit Log
@@ -186,7 +212,7 @@ class TaskController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Task created successfully',
-            'data' => $task->load(['category', 'project', 'subtasks', 'tags']),
+            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
         ], 201);
     }
 
@@ -199,7 +225,7 @@ class TaskController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $task->load(['category', 'project', 'subtasks', 'tags']),
+            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
         ]);
     }
 
@@ -224,24 +250,50 @@ class TaskController extends Controller
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
             ],
-            'due_date' => 'nullable|date',
+            'goal_id' => [
+                'nullable',
+                Rule::exists('goals', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
             'start_date' => 'nullable|date',
+            'due_date' => 'nullable|date|after_or_equal:start_date',
             'reminder_at' => 'nullable|date',
             'is_recurring' => 'nullable|boolean',
             'recurrence_pattern' => 'nullable|in:daily,weekly,monthly',
             'tags' => 'nullable|array',
             'tags.*' => 'string|max:50',
+            'dependencies' => 'nullable|array',
+            'dependencies.*' => [
+                'integer',
+                Rule::exists('tasks', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+            ],
         ]);
 
+        // Check prerequisite dependencies if marking as completed
+        if (isset($validated['status']) && $validated['status'] === 'completed') {
+            if ($task->hasUncompletedDependencies()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
+                ], 422);
+            }
+        }
+
         DB::transaction(function () use ($request, $task, $validated) {
+            $oldProjectId = $task->project_id;
+            $oldGoalId = $task->goal_id;
+
             if (isset($validated['status'])) {
                 if ($validated['status'] === 'completed' && $task->status !== 'completed') {
                     $validated['completed_at'] = Carbon::now();
-                    // Spawn next recurrence if recurring
                     $this->spawnNextRecurrence($task);
                 } elseif ($validated['status'] !== 'completed') {
                     $validated['completed_at'] = null;
                 }
+            }
+
+            if (isset($validated['dependencies'])) {
+                $task->dependencies()->sync($validated['dependencies']);
+                unset($validated['dependencies']);
             }
 
             $task->update($validated);
@@ -258,15 +310,27 @@ class TaskController extends Controller
                 $task->tags()->sync($tagIds);
             }
 
+            // Update project progress
             if ($task->project_id) {
-                $task->project->updateProgress();
+                $task->project?->updateProgress();
+            }
+            if ($oldProjectId && $oldProjectId !== $task->project_id) {
+                Project::find($oldProjectId)?->updateProgress();
+            }
+
+            // Update goal progress
+            if ($task->goal_id) {
+                $task->goal?->recalculateProgress();
+            }
+            if ($oldGoalId && $oldGoalId !== $task->goal_id) {
+                Goal::find($oldGoalId)?->recalculateProgress();
             }
         });
 
         return response()->json([
             'success' => true,
             'message' => 'Task updated successfully',
-            'data' => $task->load(['category', 'project', 'subtasks', 'tags']),
+            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
         ]);
     }
 
@@ -277,8 +341,17 @@ class TaskController extends Controller
     {
         $this->authorizeOwner($request, $task);
 
-        DB::transaction(function () use ($task) {
-            $newStatus = $task->status === 'completed' ? 'todo' : 'completed';
+        $newStatus = $task->status === 'completed' ? 'todo' : 'completed';
+
+        // Check dependencies when completing
+        if ($newStatus === 'completed' && $task->hasUncompletedDependencies()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($task, $newStatus) {
             $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
 
             $task->update([
@@ -291,14 +364,128 @@ class TaskController extends Controller
             }
 
             if ($task->project_id) {
-                $task->project->updateProgress();
+                $task->project?->updateProgress();
+            }
+
+            if ($task->goal_id) {
+                $task->goal?->recalculateProgress();
             }
         });
 
         return response()->json([
             'success' => true,
             'message' => 'Task status updated',
-            'data' => $task->load(['category', 'project', 'subtasks', 'tags']),
+            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
+        ]);
+    }
+
+    /**
+     * Bulk actions for tasks (status, delete, assign_project, assign_category).
+     */
+    public function bulkAction(Request $request)
+    {
+        $userId = $request->user()->id;
+
+        $validated = $request->validate([
+            'action' => 'required|in:status,delete,assign_project,assign_category',
+            'task_ids' => 'required|array|min:1',
+            'task_ids.*' => [
+                'integer',
+                Rule::exists('tasks', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
+            'status' => 'nullable|in:todo,in_progress,completed,cancelled',
+            'project_id' => [
+                'nullable',
+                Rule::exists('projects', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
+        ]);
+
+        $taskIds = $validated['task_ids'];
+        $affectedCount = 0;
+
+        DB::transaction(function () use ($userId, $validated, $taskIds, &$affectedCount) {
+            $tasks = Task::where('user_id', $userId)->whereIn('id', $taskIds)->get();
+
+            if ($validated['action'] === 'delete') {
+                $projectIds = $tasks->pluck('project_id')->filter()->unique();
+                $goalIds = $tasks->pluck('goal_id')->filter()->unique();
+
+                $affectedCount = Task::where('user_id', $userId)->whereIn('id', $taskIds)->delete();
+
+                foreach ($projectIds as $pId) {
+                    Project::find($pId)?->updateProgress();
+                }
+                foreach ($goalIds as $gId) {
+                    Goal::find($gId)?->recalculateProgress();
+                }
+            } elseif ($validated['action'] === 'status') {
+                $newStatus = $validated['status'] ?? 'completed';
+                $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
+
+                foreach ($tasks as $task) {
+                    if ($newStatus === 'completed' && $task->hasUncompletedDependencies()) {
+                        continue; // Skip tasks that have blocking dependencies
+                    }
+                    $task->update([
+                        'status' => $newStatus,
+                        'completed_at' => $completedAt,
+                    ]);
+                    $affectedCount++;
+                }
+
+                $projectIds = $tasks->pluck('project_id')->filter()->unique();
+                $goalIds = $tasks->pluck('goal_id')->filter()->unique();
+
+                foreach ($projectIds as $pId) {
+                    Project::find($pId)?->updateProgress();
+                }
+                foreach ($goalIds as $gId) {
+                    Goal::find($gId)?->recalculateProgress();
+                }
+            } elseif ($validated['action'] === 'assign_project') {
+                $newProjectId = $validated['project_id'] ?? null;
+                $oldProjectIds = $tasks->pluck('project_id')->filter()->unique();
+
+                $affectedCount = Task::where('user_id', $userId)
+                    ->whereIn('id', $taskIds)
+                    ->update(['project_id' => $newProjectId]);
+
+                if ($newProjectId) {
+                    Project::find($newProjectId)?->updateProgress();
+                }
+                foreach ($oldProjectIds as $pId) {
+                    Project::find($pId)?->updateProgress();
+                }
+            } elseif ($validated['action'] === 'assign_category') {
+                $newCatId = $validated['category_id'] ?? null;
+                $affectedCount = Task::where('user_id', $userId)
+                    ->whereIn('id', $taskIds)
+                    ->update(['category_id' => $newCatId]);
+            }
+
+            // Write audit log
+            AuditLog::create([
+                'user_id' => $userId,
+                'action' => 'tasks.bulk_' . $validated['action'],
+                'auditable_type' => Task::class,
+                'auditable_id' => 'bulk',
+                'payload' => [
+                    'action' => $validated['action'],
+                    'count' => $affectedCount,
+                    'task_ids' => $taskIds,
+                ],
+                'created_at' => now(),
+            ]);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Operasi bulk '{$validated['action']}' berhasil diproses untuk {$affectedCount} tugas.",
+            'affected_count' => $affectedCount,
         ]);
     }
 
@@ -311,10 +498,15 @@ class TaskController extends Controller
 
         DB::transaction(function () use ($task) {
             $projectId = $task->project_id;
+            $goalId = $task->goal_id;
+
             $task->delete();
 
             if ($projectId) {
                 Project::find($projectId)?->updateProgress();
+            }
+            if ($goalId) {
+                Goal::find($goalId)?->recalculateProgress();
             }
         });
 
@@ -348,6 +540,7 @@ class TaskController extends Controller
             'user_id' => $task->user_id,
             'project_id' => $task->project_id,
             'category_id' => $task->category_id,
+            'goal_id' => $task->goal_id,
             'title' => $task->title,
             'description' => $task->description,
             'priority' => $task->priority,
@@ -376,5 +569,3 @@ class TaskController extends Controller
         }
     }
 }
-
-

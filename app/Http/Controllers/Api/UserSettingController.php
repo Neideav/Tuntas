@@ -42,6 +42,10 @@ class UserSettingController extends Controller
 
         $settings->update($validated);
 
+        if (isset($validated['timezone'])) {
+            $request->user()->update(['timezone' => $validated['timezone']]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Pengaturan berhasil disimpan',

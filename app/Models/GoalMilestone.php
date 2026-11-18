@@ -15,6 +15,7 @@ class GoalMilestone extends Model
         'target_value',
         'current_value',
         'unit',
+        'weight',
         'is_completed',
         'due_date',
         'order',
@@ -23,6 +24,7 @@ class GoalMilestone extends Model
     protected $casts = [
         'target_value' => 'float',
         'current_value' => 'float',
+        'weight' => 'float',
         'is_completed' => 'boolean',
         'due_date' => 'date',
         'order' => 'integer',
@@ -33,4 +35,3 @@ class GoalMilestone extends Model
         return $this->belongsTo(Goal::class);
     }
 }
-

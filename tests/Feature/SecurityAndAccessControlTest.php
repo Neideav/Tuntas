@@ -229,5 +229,78 @@ class SecurityAndAccessControlTest extends TestCase
         $hijackSubmit = $this->actingAs($this->userB)->postJson("/api/v1/exam-attempts/{$attemptId}/submit");
         $hijackSubmit->assertStatus(403);
     }
+
+    public function test_cross_user_course_and_lesson_relationships_are_strictly_isolated(): void
+    {
+        // User B owns a course, module, and lesson
+        $courseB = Course::create([
+            'user_id' => $this->userB->id,
+            'title' => 'Advanced Cryptography by User B',
+        ]);
+        $moduleB = $courseB->modules()->create(['title' => 'Module 1', 'order' => 1]);
+        $lessonB = $moduleB->lessons()->create(['title' => 'Lesson 1', 'order' => 1]);
+
+        // 1. User A cannot create exam blueprint attaching User B's course
+        $bpRes = $this->actingAs($this->userA)->postJson('/api/v1/exam-blueprints', [
+            'title' => 'Exam Blueprint A',
+            'subject' => 'Crypto',
+            'duration_minutes' => 60,
+            'course_id' => $courseB->id,
+        ]);
+        $bpRes->assertStatus(422)->assertJsonValidationErrors(['course_id']);
+
+        // 2. User A cannot create learning session attaching User B's course or lesson
+        $sessionResCourse = $this->actingAs($this->userA)->postJson('/api/v1/learning-sessions', [
+            'topic' => 'Illegal Study Session',
+            'duration_minutes' => 45,
+            'session_date' => Carbon::today()->toDateString(),
+            'course_id' => $courseB->id,
+        ]);
+        $sessionResCourse->assertStatus(422)->assertJsonValidationErrors(['course_id']);
+
+        $sessionResLesson = $this->actingAs($this->userA)->postJson('/api/v1/learning-sessions', [
+            'topic' => 'Illegal Lesson Session',
+            'duration_minutes' => 45,
+            'session_date' => Carbon::today()->toDateString(),
+            'lesson_id' => $lessonB->id,
+        ]);
+        $sessionResLesson->assertStatus(422)->assertJsonValidationErrors(['lesson_id']);
+    }
+
+    public function test_invalid_inverted_date_ranges_are_rejected(): void
+    {
+        // Task due_date before start_date is rejected
+        $taskRes = $this->actingAs($this->userA)->postJson('/api/v1/tasks', [
+            'title' => 'Time Traveler Task',
+            'start_date' => '2026-12-10',
+            'due_date' => '2026-12-01',
+        ]);
+        $taskRes->assertStatus(422)->assertJsonValidationErrors(['due_date']);
+
+        // Project deadline before start_date is rejected
+        $projRes = $this->actingAs($this->userA)->postJson('/api/v1/projects', [
+            'title' => 'Time Traveler Project',
+            'start_date' => '2026-12-10',
+            'deadline' => '2026-12-01',
+        ]);
+        $projRes->assertStatus(422)->assertJsonValidationErrors(['deadline']);
+    }
+
+    public function test_login_rejects_wrong_password_without_backdoor_bypass(): void
+    {
+        // Attempting to log in to demo@tuntas.test with incorrect password MUST fail with 422
+        $demoUser = User::create([
+            'name' => 'Demo User',
+            'email' => 'demo@tuntas.test',
+            'password' => \Illuminate\Support\Facades\Hash::make('ActualSecretPassword123!'),
+        ]);
+
+        $loginAttempt = $this->postJson('/api/v1/auth/login', [
+            'email' => 'demo@tuntas.test',
+            'password' => 'WrongArbitraryPassword!',
+        ]);
+
+        $loginAttempt->assertStatus(422)->assertJsonValidationErrors(['password']);
+    }
 }
 

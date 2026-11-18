@@ -14,6 +14,7 @@ class Task extends Model
         'user_id',
         'project_id',
         'category_id',
+        'goal_id',
         'title',
         'description',
         'status',
@@ -51,6 +52,11 @@ class Task extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function goal()
+    {
+        return $this->belongsTo(Goal::class);
+    }
+
     public function subtasks()
     {
         return $this->hasMany(Subtask::class)->orderBy('order');
@@ -60,5 +66,28 @@ class Task extends Model
     {
         return $this->morphToMany(Tag::class, 'taggable');
     }
-}
 
+    /**
+     * Tasks that this task is blocked by (prerequisites).
+     */
+    public function dependencies()
+    {
+        return $this->belongsToMany(Task::class, 'task_dependencies', 'task_id', 'depends_on_task_id');
+    }
+
+    /**
+     * Tasks that are blocked by this task.
+     */
+    public function dependents()
+    {
+        return $this->belongsToMany(Task::class, 'task_dependencies', 'depends_on_task_id', 'task_id');
+    }
+
+    /**
+     * Check if this task has incomplete prerequisite tasks.
+     */
+    public function hasUncompletedDependencies(): bool
+    {
+        return $this->dependencies()->where('status', '!=', 'completed')->exists();
+    }
+}

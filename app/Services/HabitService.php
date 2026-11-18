@@ -11,44 +11,65 @@ use Illuminate\Support\Facades\DB;
 class HabitService
 {
     /**
-     * Toggle completion for a specific date (default today).
+     * Toggle completion or log numeric measurement for a specific date (default today).
      */
-    public function toggleCompletion(Habit $habit, ?string $date = null, ?string $notes = null): array
+    public function toggleCompletion(Habit $habit, ?string $date = null, ?string $notes = null, ?float $numericValue = null): array
     {
         $targetDate = $date ? Carbon::parse($date)->toDateString() : Carbon::today()->toDateString();
+        $isNumeric = ($habit->habit_type === 'numeric');
+        $targetThreshold = (float) ($habit->target_value > 0 ? $habit->target_value : ($habit->target_count > 0 ? $habit->target_count : 1));
 
-        return DB::transaction(function () use ($habit, $targetDate, $notes) {
+        return DB::transaction(function () use ($habit, $targetDate, $notes, $numericValue, $isNumeric, $targetThreshold) {
             $log = HabitLog::where('habit_id', $habit->id)
                 ->whereDate('log_date', $targetDate)
                 ->first();
 
-            if ($log && $log->is_completed) {
-                // Was completed, un-complete it
-                $log->update([
-                    'is_completed' => false,
-                    'value' => 0,
-                    'notes' => $notes ?? $log->notes,
-                ]);
-            } elseif ($log) {
-                $log->update([
-                    'is_completed' => true,
-                    'value' => $habit->target_count,
-                    'notes' => $notes ?? $log->notes,
-                ]);
-            } else {
-                $log = HabitLog::updateOrCreate(
-                    [
+            if ($isNumeric && $numericValue !== null) {
+                // Numeric habit explicit measurement log
+                $isCompleted = ($numericValue >= $targetThreshold);
+                if ($log) {
+                    $log->update([
+                        'value' => (int) round($numericValue),
+                        'is_completed' => $isCompleted,
+                        'notes' => $notes ?? $log->notes,
+                    ]);
+                } else {
+                    $log = HabitLog::create([
                         'habit_id' => $habit->id,
-                        'log_date' => $targetDate,
-                    ],
-                    [
                         'user_id' => $habit->user_id,
-                        'value' => $habit->target_count,
+                        'log_date' => $targetDate,
+                        'value' => (int) round($numericValue),
+                        'is_completed' => $isCompleted,
+                        'used_freeze' => false,
+                        'notes' => $notes,
+                    ]);
+                }
+            } else {
+                // Boolean toggle or numeric quick-toggle
+                if ($log && $log->is_completed) {
+                    // Was completed, un-complete it
+                    $log->update([
+                        'is_completed' => false,
+                        'value' => 0,
+                        'notes' => $notes ?? $log->notes,
+                    ]);
+                } elseif ($log) {
+                    $log->update([
+                        'is_completed' => true,
+                        'value' => (int) round($targetThreshold),
+                        'notes' => $notes ?? $log->notes,
+                    ]);
+                } else {
+                    $log = HabitLog::create([
+                        'habit_id' => $habit->id,
+                        'user_id' => $habit->user_id,
+                        'log_date' => $targetDate,
+                        'value' => (int) round($targetThreshold),
                         'is_completed' => true,
                         'used_freeze' => false,
                         'notes' => $notes,
-                    ]
-                );
+                    ]);
+                }
             }
 
             // Recalculate streak
@@ -69,6 +90,7 @@ class HabitService
                 'payload' => [
                     'date' => $targetDate,
                     'is_completed' => $log->is_completed,
+                    'value' => $log->value,
                     'current_streak' => $streak,
                 ],
                 'created_at' => now(),
@@ -82,10 +104,15 @@ class HabitService
     }
 
     /**
-     * Calculate current active streak according to habit frequency (daily, weekdays, weekly).
+     * Calculate current active streak according to habit frequency (daily, weekdays, weekly, custom days).
      */
     public function calculateStreak(Habit $habit): int
     {
+        // Custom selected days takes priority if configured
+        if (!empty($habit->selected_days) && is_array($habit->selected_days) && count($habit->selected_days) > 0) {
+            return $this->calculateCustomDaysStreak($habit, $habit->selected_days);
+        }
+
         $frequency = $habit->frequency ?? 'daily';
 
         if ($frequency === 'weekdays') {
@@ -97,6 +124,71 @@ class HabitService
         }
 
         return $this->calculateDailyStreak($habit);
+    }
+
+    /**
+     * Streak calculation for custom selected days of week.
+     */
+    protected function calculateCustomDaysStreak(Habit $habit, array $selectedDays): int
+    {
+        $normalizedDays = array_map(fn($d) => (int)$d % 7, $selectedDays);
+
+        $logs = HabitLog::where('habit_id', $habit->id)
+            ->where(function ($q) {
+                $q->where('is_completed', true)->orWhere('used_freeze', true);
+            })
+            ->pluck('log_date')
+            ->map(fn($d) => Carbon::parse($d)->toDateString())
+            ->flip()
+            ->all();
+
+        $today = Carbon::today();
+        $todayDayOfWeek = $today->dayOfWeek;
+
+        if (in_array($todayDayOfWeek, $normalizedDays, true)) {
+            $todayStr = $today->toDateString();
+            if (isset($logs[$todayStr])) {
+                $cursor = $today->copy();
+            } else {
+                // If today is scheduled but not yet completed, look at previous scheduled day
+                $prev = $today->copy()->subDay();
+                while (!in_array($prev->dayOfWeek, $normalizedDays, true)) {
+                    $prev->subDay();
+                }
+                if (isset($logs[$prev->toDateString()])) {
+                    $cursor = $prev;
+                } else {
+                    return 0;
+                }
+            }
+        } else {
+            // Today is not a scheduled day, find the latest scheduled day
+            $prev = $today->copy()->subDay();
+            while (!in_array($prev->dayOfWeek, $normalizedDays, true)) {
+                $prev->subDay();
+            }
+            if (isset($logs[$prev->toDateString()])) {
+                $cursor = $prev;
+            } else {
+                return 0;
+            }
+        }
+
+        $streak = 0;
+        while (true) {
+            $dateStr = $cursor->toDateString();
+            if (isset($logs[$dateStr])) {
+                $streak++;
+                $cursor->subDay();
+                while (!in_array($cursor->dayOfWeek, $normalizedDays, true)) {
+                    $cursor->subDay();
+                }
+            } else {
+                break;
+            }
+        }
+
+        return $streak;
     }
 
     /**
@@ -329,4 +421,3 @@ class HabitService
         });
     }
 }
-

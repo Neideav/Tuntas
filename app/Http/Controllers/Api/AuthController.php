@@ -77,15 +77,9 @@ class AuthController extends Controller
         }
 
         if (! Hash::check($credentials['password'], $user->password)) {
-            // Pada mode lokal, jika pengguna pengujian (customer@pasaria.id / demo@tuntas.test / test@example.com) memasukkan password,
-            // sinkronkan password tersebut agar pengguna tidak terkunci dan login berhasil secara seamless.
-            if (app()->isLocal() && in_array($user->email, ['customer@pasaria.id', 'demo@tuntas.test', 'test@example.com'])) {
-                $user->update(['password' => Hash::make($credentials['password'])]);
-            } else {
-                throw ValidationException::withMessages([
-                    'password' => ['Kata sandi yang Anda masukkan salah. Silakan coba lagi.'],
-                ]);
-            }
+            throw ValidationException::withMessages([
+                'password' => ['Kata sandi yang Anda masukkan salah. Silakan coba lagi.'],
+            ]);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -139,6 +133,10 @@ class AuthController extends Controller
         ]);
 
         $user->update($validated);
+
+        if (isset($validated['timezone'])) {
+            UserSetting::updateOrCreate(['user_id' => $user->id], ['timezone' => $validated['timezone']]);
+        }
 
         return response()->json([
             'success' => true,

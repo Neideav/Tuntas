@@ -64,13 +64,18 @@ Route::prefix('v1')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index']);
 
         // Tasks & Subtasks
+        Route::post('tasks/bulk', [TaskController::class, 'bulkAction']);
         Route::apiResource('tasks', TaskController::class);
         Route::patch('tasks/{task}/toggle', [TaskController::class, 'toggleStatus']);
         Route::post('tasks/{task}/subtasks', [SubtaskController::class, 'store']);
         Route::patch('subtasks/{subtask}/toggle', [SubtaskController::class, 'toggle']);
         Route::delete('subtasks/{subtask}', [SubtaskController::class, 'destroy']);
 
-        // Projects
+        // Projects & Milestones
+        Route::post('projects/{project}/milestones', [ProjectController::class, 'addMilestone']);
+        Route::patch('projects/{project}/milestones/{milestone}/toggle', [ProjectController::class, 'toggleMilestone']);
+        Route::delete('projects/{project}/milestones/{milestone}', [ProjectController::class, 'deleteMilestone']);
+        Route::patch('projects/{project}/archive', [ProjectController::class, 'toggleArchive']);
         Route::apiResource('projects', ProjectController::class);
 
         // Dedicated Examination System
@@ -112,6 +117,7 @@ Route::prefix('v1')->group(function () {
         Route::get('habits/{habit}/history', [HabitController::class, 'history']);
 
         // Goals & Milestones
+        Route::patch('goals/{goal}/archive', [GoalController::class, 'toggleArchive']);
         Route::apiResource('goals', GoalController::class);
         Route::post('goals/{goal}/milestones', [GoalController::class, 'addMilestone']);
         Route::patch('milestones/{milestone}', [GoalController::class, 'updateMilestone']);

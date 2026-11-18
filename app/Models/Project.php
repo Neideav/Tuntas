@@ -13,19 +13,23 @@ class Project extends Model
     protected $fillable = [
         'user_id',
         'category_id',
+        'goal_id',
         'title',
         'description',
         'status',
         'priority',
         'progress',
+        'health',
         'start_date',
         'deadline',
+        'is_archived',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'deadline' => 'date',
         'progress' => 'integer',
+        'is_archived' => 'boolean',
     ];
 
     public function user()
@@ -38,9 +42,19 @@ class Project extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function goal()
+    {
+        return $this->belongsTo(Goal::class);
+    }
+
     public function tasks()
     {
         return $this->hasMany(Task::class);
+    }
+
+    public function milestones()
+    {
+        return $this->hasMany(ProjectMilestone::class)->orderBy('order');
     }
 
     public function tags()
@@ -49,18 +63,31 @@ class Project extends Model
     }
 
     /**
-     * Recalculate and update progress based on linked tasks.
+     * Recalculate and update progress based on linked tasks and milestones.
      */
     public function updateProgress(): void
     {
-        $total = $this->tasks()->count();
+        $tasksCount = $this->tasks()->count();
+        $milestonesCount = $this->milestones()->count();
+        $total = $tasksCount + $milestonesCount;
+
         if ($total === 0) {
             $this->update(['progress' => 0]);
             return;
         }
 
-        $completed = $this->tasks()->where('status', 'completed')->count();
-        $this->update(['progress' => (int) round(($completed / $total) * 100)]);
+        $completedTasks = $this->tasks()->where('status', 'completed')->count();
+        $completedMilestones = $this->milestones()->where('is_completed', true)->count();
+        $completed = $completedTasks + $completedMilestones;
+
+        $newProgress = (int) round(($completed / $total) * 100);
+        $this->update([
+            'progress' => $newProgress,
+            'status' => $newProgress >= 100 ? 'completed' : ($this->status === 'completed' ? 'in_progress' : $this->status),
+        ]);
+
+        if ($this->goal_id) {
+            $this->goal?->recalculateProgress();
+        }
     }
 }
-

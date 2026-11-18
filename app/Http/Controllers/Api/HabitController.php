@@ -49,7 +49,11 @@ class HabitController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'frequency' => 'required|in:daily,weekdays,weekly',
+            'habit_type' => 'nullable|in:boolean,numeric',
             'target_count' => 'nullable|integer|min:1',
+            'target_value' => 'nullable|numeric|min:0.01',
+            'selected_days' => 'nullable|array',
+            'selected_days.*' => 'integer|min:0|max:6',
             'unit' => 'nullable|string|max:50',
             'color' => 'nullable|string|max:50',
             'icon' => 'nullable|string|max:50',
@@ -58,7 +62,10 @@ class HabitController extends Controller
 
         $habit = Habit::create(array_merge($validated, [
             'user_id' => $request->user()->id,
+            'habit_type' => $validated['habit_type'] ?? 'boolean',
             'target_count' => $validated['target_count'] ?? 1,
+            'target_value' => $validated['target_value'] ?? ($validated['target_count'] ?? 1.0),
+            'selected_days' => $validated['selected_days'] ?? null,
             'color' => $validated['color'] ?? '#10b981',
             'icon' => $validated['icon'] ?? 'check',
             'freeze_tokens' => $validated['freeze_tokens'] ?? 2,
@@ -95,7 +102,11 @@ class HabitController extends Controller
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
             'frequency' => 'sometimes|in:daily,weekdays,weekly',
+            'habit_type' => 'nullable|in:boolean,numeric',
             'target_count' => 'sometimes|integer|min:1',
+            'target_value' => 'nullable|numeric|min:0.01',
+            'selected_days' => 'nullable|array',
+            'selected_days.*' => 'integer|min:0|max:6',
             'unit' => 'nullable|string|max:50',
             'color' => 'nullable|string|max:50',
             'icon' => 'nullable|string|max:50',
@@ -134,8 +145,9 @@ class HabitController extends Controller
 
         $date = $request->input('date');
         $notes = $request->input('notes');
+        $numericValue = $request->has('numeric_value') ? (float) $request->input('numeric_value') : null;
 
-        $result = $this->habitService->toggleCompletion($habit, $date, $notes);
+        $result = $this->habitService->toggleCompletion($habit, $date, $notes, $numericValue);
 
         return response()->json([
             'success' => true,
@@ -200,4 +212,3 @@ class HabitController extends Controller
         ]);
     }
 }
-

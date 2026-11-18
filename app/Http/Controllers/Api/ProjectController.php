@@ -3,37 +3,83 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Project;
+use App\Models\ProjectMilestone;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ProjectController extends Controller
 {
     /**
-     * List user projects.
+     * List user projects with milestones, tasks count, and summary statistics.
      */
     public function index(Request $request)
     {
-        $query = Project::where('user_id', $request->user()->id)
-            ->with(['category'])
-            ->withCount(['tasks', 'tasks as completed_tasks_count' => function ($q) {
-                $q->where('status', 'completed');
-            }]);
+        $userId = $request->user()->id;
+        $query = Project::where('user_id', $userId)
+            ->with(['category', 'goal', 'milestones'])
+            ->withCount([
+                'tasks',
+                'tasks as completed_tasks_count' => function ($q) {
+                    $q->where('status', 'completed');
+                },
+                'milestones',
+                'milestones as completed_milestones_count' => function ($q) {
+                    $q->where('is_completed', true);
+                },
+            ]);
+
+        // Filter by archive state (default active only)
+        if ($request->has('archived')) {
+            $query->where('is_archived', $request->boolean('archived'));
+        } else {
+            $query->where('is_archived', false);
+        }
 
         if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
         }
 
+        if ($request->filled('health') && $request->health !== 'all') {
+            $query->where('health', $request->health);
+        }
+
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        if ($request->filled('goal_id')) {
+            $query->where('goal_id', $request->goal_id);
+        }
+
         if ($request->filled('q')) {
             $q = $request->q;
-            $query->where('title', 'like', "%{$q}%");
+            $query->where(function ($sub) use ($q) {
+                $sub->where('title', 'like', "%{$q}%")
+                    ->orWhere('description', 'like', "%{$q}%");
+            });
         }
 
         $projects = $query->latest()->get();
 
+        // Summary statistics for dashboard/overview
+        $allProjects = Project::where('user_id', $userId)->get();
+        $summary = [
+            'total' => $allProjects->where('is_archived', false)->count(),
+            'completed' => $allProjects->where('is_archived', false)->where('status', 'completed')->count(),
+            'in_progress' => $allProjects->where('is_archived', false)->where('status', 'in_progress')->count(),
+            'on_track' => $allProjects->where('is_archived', false)->where('health', 'on_track')->count(),
+            'at_risk' => $allProjects->where('is_archived', false)->where('health', 'at_risk')->count(),
+            'off_track' => $allProjects->where('is_archived', false)->where('health', 'off_track')->count(),
+            'archived' => $allProjects->where('is_archived', true)->count(),
+        ];
+
         return response()->json([
             'success' => true,
             'data' => $projects,
+            'summary' => $summary,
         ]);
     }
 
@@ -51,43 +97,80 @@ class ProjectController extends Controller
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
             ],
+            'goal_id' => [
+                'nullable',
+                Rule::exists('goals', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'status' => 'nullable|in:planning,in_progress,completed,on_hold',
             'priority' => 'nullable|in:low,medium,high,urgent',
+            'health' => 'nullable|in:on_track,at_risk,off_track',
             'start_date' => 'nullable|date',
-            'deadline' => 'nullable|date',
+            'deadline' => 'nullable|date|after_or_equal:start_date',
+            'milestones' => 'nullable|array',
+            'milestones.*.title' => 'required|string|max:255',
+            'milestones.*.due_date' => 'nullable|date',
         ]);
 
-        $project = Project::create([
-            'user_id' => $request->user()->id,
-            'category_id' => $validated['category_id'] ?? null,
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'status' => $validated['status'] ?? 'planning',
-            'priority' => $validated['priority'] ?? 'medium',
-            'start_date' => $validated['start_date'] ?? null,
-            'deadline' => $validated['deadline'] ?? null,
-            'progress' => 0,
-        ]);
+        $project = DB::transaction(function () use ($userId, $validated) {
+            $project = Project::create([
+                'user_id' => $userId,
+                'category_id' => $validated['category_id'] ?? null,
+                'goal_id' => $validated['goal_id'] ?? null,
+                'title' => $validated['title'],
+                'description' => $validated['description'] ?? null,
+                'status' => $validated['status'] ?? 'planning',
+                'priority' => $validated['priority'] ?? 'medium',
+                'health' => $validated['health'] ?? 'on_track',
+                'start_date' => $validated['start_date'] ?? null,
+                'deadline' => $validated['deadline'] ?? null,
+                'progress' => 0,
+                'is_archived' => false,
+            ]);
+
+            if (!empty($validated['milestones'])) {
+                foreach ($validated['milestones'] as $index => $m) {
+                    $project->milestones()->create([
+                        'title' => $m['title'],
+                        'due_date' => $m['due_date'] ?? null,
+                        'order' => $index,
+                        'is_completed' => false,
+                    ]);
+                }
+            }
+
+            if ($project->goal_id) {
+                $project->goal?->recalculateProgress();
+            }
+
+            AuditLog::create([
+                'user_id' => $userId,
+                'action' => 'project.created',
+                'auditable_type' => Project::class,
+                'auditable_id' => (string) $project->id,
+                'payload' => ['title' => $project->title],
+                'created_at' => now(),
+            ]);
+
+            return $project;
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Proyek berhasil dibuat',
-            'data' => $project->load('category'),
+            'data' => $project->load(['category', 'goal', 'milestones']),
         ], 201);
     }
 
     /**
-     * Show a project with its tasks.
+     * Show a project with its tasks, milestones, and goal.
      */
     public function show(Request $request, Project $project)
     {
-        if ($project->user_id !== $request->user()->id) {
-            abort(403);
-        }
+        $this->authorizeOwner($request, $project);
 
         return response()->json([
             'success' => true,
-            'data' => $project->load(['category', 'tasks.subtasks']),
+            'data' => $project->load(['category', 'goal', 'milestones', 'tasks.subtasks', 'tasks.dependencies']),
         ]);
     }
 
@@ -96,10 +179,7 @@ class ProjectController extends Controller
      */
     public function update(Request $request, Project $project)
     {
-        if ($project->user_id !== $request->user()->id) {
-            abort(403);
-        }
-
+        $this->authorizeOwner($request, $project);
         $userId = $request->user()->id;
 
         $validated = $request->validate([
@@ -109,18 +189,143 @@ class ProjectController extends Controller
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
             ],
+            'goal_id' => [
+                'nullable',
+                Rule::exists('goals', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'status' => 'nullable|in:planning,in_progress,completed,on_hold',
             'priority' => 'nullable|in:low,medium,high,urgent',
+            'health' => 'nullable|in:on_track,at_risk,off_track',
+            'is_archived' => 'nullable|boolean',
             'start_date' => 'nullable|date',
-            'deadline' => 'nullable|date',
+            'deadline' => 'nullable|date|after_or_equal:start_date',
         ]);
 
-        $project->update($validated);
+        DB::transaction(function () use ($project, $validated) {
+            $oldGoalId = $project->goal_id;
+            $project->update($validated);
+
+            if ($project->goal_id) {
+                $project->goal?->recalculateProgress();
+            }
+            if ($oldGoalId && $oldGoalId !== $project->goal_id) {
+                \App\Models\Goal::find($oldGoalId)?->recalculateProgress();
+            }
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Proyek berhasil diperbarui',
-            'data' => $project->load('category'),
+            'data' => $project->fresh(['category', 'goal', 'milestones']),
+        ]);
+    }
+
+    /**
+     * Add milestone to a project.
+     */
+    public function addMilestone(Request $request, Project $project)
+    {
+        $this->authorizeOwner($request, $project);
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'due_date' => 'nullable|date',
+        ]);
+
+        $maxOrder = $project->milestones()->max('order') ?? 0;
+
+        $milestone = DB::transaction(function () use ($project, $validated, $maxOrder) {
+            $m = $project->milestones()->create([
+                'title' => $validated['title'],
+                'description' => $validated['description'] ?? null,
+                'due_date' => $validated['due_date'] ?? null,
+                'order' => $maxOrder + 1,
+                'is_completed' => false,
+            ]);
+
+            $project->updateProgress();
+            return $m;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Milestone proyek berhasil ditambahkan',
+            'data' => [
+                'milestone' => $milestone,
+                'project_progress' => $project->fresh()->progress,
+            ],
+        ], 201);
+    }
+
+    /**
+     * Toggle completion status of a project milestone.
+     */
+    public function toggleMilestone(Request $request, Project $project, ProjectMilestone $milestone)
+    {
+        $this->authorizeOwner($request, $project);
+
+        if ($milestone->project_id !== $project->id) {
+            abort(404, 'Milestone tidak ditemukan dalam proyek ini.');
+        }
+
+        DB::transaction(function () use ($project, $milestone) {
+            $milestone->update([
+                'is_completed' => !$milestone->is_completed,
+            ]);
+            $project->updateProgress();
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status milestone diperbarui',
+            'data' => [
+                'milestone' => $milestone->fresh(),
+                'project_progress' => $project->fresh()->progress,
+            ],
+        ]);
+    }
+
+    /**
+     * Delete a project milestone.
+     */
+    public function deleteMilestone(Request $request, Project $project, ProjectMilestone $milestone)
+    {
+        $this->authorizeOwner($request, $project);
+
+        if ($milestone->project_id !== $project->id) {
+            abort(404, 'Milestone tidak ditemukan dalam proyek ini.');
+        }
+
+        DB::transaction(function () use ($project, $milestone) {
+            $milestone->delete();
+            $project->updateProgress();
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Milestone berhasil dihapus',
+            'data' => [
+                'project_progress' => $project->fresh()->progress,
+            ],
+        ]);
+    }
+
+    /**
+     * Toggle archive/restore status of project.
+     */
+    public function toggleArchive(Request $request, Project $project)
+    {
+        $this->authorizeOwner($request, $project);
+
+        $project->update([
+            'is_archived' => !$project->is_archived,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $project->is_archived ? 'Proyek berhasil diarsipkan' : 'Proyek berhasil dipulihkan',
+            'data' => $project->fresh(['category', 'milestones']),
         ]);
     }
 
@@ -129,16 +334,27 @@ class ProjectController extends Controller
      */
     public function destroy(Request $request, Project $project)
     {
-        if ($project->user_id !== $request->user()->id) {
-            abort(403);
-        }
+        $this->authorizeOwner($request, $project);
 
-        $project->delete();
+        DB::transaction(function () use ($project) {
+            $goalId = $project->goal_id;
+            $project->delete();
+
+            if ($goalId) {
+                \App\Models\Goal::find($goalId)?->recalculateProgress();
+            }
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Proyek berhasil dihapus',
         ]);
     }
-}
 
+    private function authorizeOwner(Request $request, Project $project): void
+    {
+        if ($project->user_id !== $request->user()->id) {
+            abort(403, 'Unauthorized.');
+        }
+    }
+}

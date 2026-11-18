@@ -14,7 +14,10 @@ class Habit extends Model
         'title',
         'description',
         'frequency',
+        'habit_type',
         'target_count',
+        'target_value',
+        'selected_days',
         'unit',
         'color',
         'icon',
@@ -26,6 +29,8 @@ class Habit extends Model
 
     protected $casts = [
         'target_count' => 'integer',
+        'target_value' => 'float',
+        'selected_days' => 'array',
         'current_streak' => 'integer',
         'best_streak' => 'integer',
         'freeze_tokens' => 'integer',
@@ -42,4 +47,3 @@ class Habit extends Model
         return $this->hasMany(HabitLog::class);
     }
 }
-

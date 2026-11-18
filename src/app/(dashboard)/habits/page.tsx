@@ -15,6 +15,8 @@ import {
   History,
   AlertCircle,
   TrendingUp,
+  Archive,
+  RotateCcw,
 } from 'lucide-react';
 import api, { getCachedData } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -24,21 +26,48 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { HabitsSkeleton } from '@/components/ui/Skeleton';
 
+interface HabitLog {
+  id: number;
+  log_date: string;
+  value: number;
+  is_completed: boolean;
+  used_freeze: boolean;
+}
+
 interface Habit {
   id: number;
   title: string;
   description?: string;
   frequency: 'daily' | 'weekdays' | 'weekly';
+  habit_type?: 'boolean' | 'numeric';
   target_count: number;
+  target_value?: number;
+  selected_days?: number[];
+  unit?: string;
   current_streak: number;
   best_streak: number;
   freeze_tokens: number;
+  is_archived?: boolean;
   is_completed_today?: boolean;
+  today_log?: HabitLog;
 }
+
+const DAYS_OF_WEEK = [
+  { id: 1, label: 'Mon' },
+  { id: 2, label: 'Tue' },
+  { id: 3, label: 'Wed' },
+  { id: 4, label: 'Thu' },
+  { id: 5, label: 'Fri' },
+  { id: 6, label: 'Sat' },
+  { id: 0, label: 'Sun' },
+];
 
 export default function HabitsPage() {
   const [habits, setHabits] = useState<Habit[]>(() => getCachedData<Habit[]>('/habits') || []);
   const [loading, setLoading] = useState<boolean>(() => !getCachedData('/habits'));
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isFreezeModalOpen, setIsFreezeModalOpen] = useState<Habit | null>(null);
   const [freezeDate, setFreezeDate] = useState('');
@@ -49,6 +78,10 @@ export default function HabitsPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editFrequency, setEditFrequency] = useState<'daily' | 'weekdays' | 'weekly'>('daily');
+  const [editHabitType, setEditHabitType] = useState<'boolean' | 'numeric'>('boolean');
+  const [editTargetValue, setEditTargetValue] = useState('1');
+  const [editUnit, setEditUnit] = useState('');
+  const [editSelectedDays, setEditSelectedDays] = useState<number[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
   // History State
@@ -56,10 +89,14 @@ export default function HabitsPage() {
   const [historyData, setHistoryData] = useState<any | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Create Form
+  // Create Form State
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [frequency, setFrequency] = useState<'daily' | 'weekdays' | 'weekly'>('daily');
+  const [habitType, setHabitType] = useState<'boolean' | 'numeric'>('boolean');
+  const [targetValue, setTargetValue] = useState('1');
+  const [unit, setUnit] = useState('');
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [freezeTokens, setFreezeTokens] = useState(2);
   const [saving, setSaving] = useState(false);
 
@@ -68,7 +105,7 @@ export default function HabitsPage() {
       if (!silent && habits.length === 0) {
         setLoading(true);
       }
-      const res = await api.get('/habits');
+      const res = await api.get(`/habits?archived=${showArchived ? 1 : 0}`);
       if (res.data?.success) {
         setHabits(res.data.data || []);
       }
@@ -80,22 +117,30 @@ export default function HabitsPage() {
   };
 
   useEffect(() => {
-    const hasCache = !!getCachedData('/habits');
-    fetchHabits(hasCache);
-  }, []);
+    fetchHabits();
+  }, [showArchived]);
 
-  const handleToggle = async (habitId: number) => {
+  const handleToggle = async (habitId: number, numericValue?: number) => {
     try {
-      const res = await api.post(`/habits/${habitId}/toggle`);
+      const payload: any = {};
+      if (numericValue !== undefined) {
+        payload.numeric_value = numericValue;
+      }
+
+      const res = await api.post(`/habits/${habitId}/toggle`, payload);
       if (res.data?.success) {
+        const updatedHabit = res.data.data.habit;
+        const updatedLog = res.data.data.log;
+
         setHabits((prev) =>
           prev.map((h) =>
             h.id === habitId
               ? {
                   ...h,
-                  is_completed_today: !h.is_completed_today,
-                  current_streak: res.data.data.habit.current_streak,
-                  best_streak: res.data.data.habit.best_streak,
+                  is_completed_today: updatedLog.is_completed,
+                  current_streak: updatedHabit.current_streak,
+                  best_streak: updatedHabit.best_streak,
+                  today_log: updatedLog,
                 }
               : h
           )
@@ -116,6 +161,10 @@ export default function HabitsPage() {
         title,
         description,
         frequency,
+        habit_type: habitType,
+        target_value: habitType === 'numeric' ? Number(targetValue) : 1,
+        unit: habitType === 'numeric' ? unit : null,
+        selected_days: selectedDays.length > 0 ? selectedDays : null,
         freeze_tokens: freezeTokens,
       });
 
@@ -124,11 +173,15 @@ export default function HabitsPage() {
         setTitle('');
         setDescription('');
         setFrequency('daily');
+        setHabitType('boolean');
+        setTargetValue('1');
+        setUnit('');
+        setSelectedDays([]);
         setFreezeTokens(2);
         fetchHabits();
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Could not create habit.');
     } finally {
       setSaving(false);
     }
@@ -139,6 +192,10 @@ export default function HabitsPage() {
     setEditTitle(habit.title);
     setEditDescription(habit.description || '');
     setEditFrequency(habit.frequency);
+    setEditHabitType(habit.habit_type || 'boolean');
+    setEditTargetValue(habit.target_value ? String(habit.target_value) : '1');
+    setEditUnit(habit.unit || '');
+    setEditSelectedDays(habit.selected_days || []);
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -151,6 +208,10 @@ export default function HabitsPage() {
         title: editTitle,
         description: editDescription,
         frequency: editFrequency,
+        habit_type: editHabitType,
+        target_value: editHabitType === 'numeric' ? Number(editTargetValue) : 1,
+        unit: editHabitType === 'numeric' ? editUnit : null,
+        selected_days: editSelectedDays.length > 0 ? editSelectedDays : null,
       });
 
       if (res.data?.success) {
@@ -161,6 +222,20 @@ export default function HabitsPage() {
       console.error(err);
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  const handleToggleArchive = async (habit: Habit) => {
+    try {
+      const res = await api.put(`/habits/${habit.id}`, {
+        is_archived: !habit.is_archived,
+      });
+      if (res.data?.success) {
+        setHabits((prev) => prev.filter((h) => h.id !== habit.id));
+        fetchHabits(true);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -214,16 +289,38 @@ export default function HabitsPage() {
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">Habit Tracker</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Build consistency, protect your streak with freeze shields, and track productive daily routines.
+            Build consistency, protect streaks with freeze shields, and measure daily routines with targets.
           </p>
         </div>
-        <Button
-          onClick={() => setIsCreateOpen(true)}
-          leftIcon={<Plus className="h-4 w-4" />}
-          className="shrink-0"
-        >
-          New Habit
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Active vs Archived Filter Tabs */}
+          <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200">
+            <button
+              onClick={() => setShowArchived(false)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                !showArchived ? 'bg-slate-900 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setShowArchived(true)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                showArchived ? 'bg-slate-900 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Archived
+            </button>
+          </div>
+
+          <Button
+            onClick={() => setIsCreateOpen(true)}
+            leftIcon={<Plus className="h-4 w-4" />}
+            className="bg-slate-900 text-white hover:bg-black"
+          >
+            New Habit
+          </Button>
+        </div>
       </div>
 
       {/* Habits Grid */}
@@ -232,126 +329,205 @@ export default function HabitsPage() {
       ) : habits.length === 0 ? (
         <EmptyState
           icon={Flame}
-          title="No habits yet"
-          description="Create your first habit like 'Daily LeetCode Problem' or 'Morning Reading' to start tracking streaks."
-          actionLabel="Create Habit"
-          onAction={() => setIsCreateOpen(true)}
+          title={showArchived ? 'No archived habits' : 'No habits tracked yet'}
+          description={showArchived ? 'You have no archived habits.' : 'Start building daily momentum by creating your first habit.'}
+          actionLabel={showArchived ? undefined : 'Create Habit'}
+          onAction={showArchived ? undefined : () => setIsCreateOpen(true)}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {habits.map((habit) => (
-            <div
-              key={habit.id}
-              className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition space-y-4 flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                {/* Header: Title, Edit & Delete */}
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      {habit.frequency}
-                    </span>
-                    <h3 className="text-base font-bold text-slate-900 leading-tight">
+          {habits.map((habit) => {
+            const isNumeric = habit.habit_type === 'numeric';
+            const targetVal = habit.target_value || habit.target_count || 1;
+            const currentVal = habit.today_log?.value || 0;
+            const progressPct = Math.min(100, Math.round((currentVal / targetVal) * 100));
+
+            return (
+              <div
+                key={habit.id}
+                className="group relative flex flex-col justify-between bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs hover:shadow-md transition-shadow space-y-4"
+              >
+                <div>
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 uppercase tracking-wider px-2 py-0.5 rounded-md">
+                        {habit.frequency}
+                      </span>
+                      {isNumeric && (
+                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md">
+                          Target {targetVal} {habit.unit}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openHistoryModal(habit)}
+                        className="p-1 text-slate-400 hover:text-slate-900 transition cursor-pointer"
+                        title="View Consistency History"
+                      >
+                        <History className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => openEditModal(habit)}
+                        className="p-1 text-slate-400 hover:text-slate-900 transition cursor-pointer"
+                        title="Edit Habit"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleArchive(habit)}
+                        className="p-1 text-slate-400 hover:text-amber-600 transition cursor-pointer"
+                        title={habit.is_archived ? 'Restore' : 'Archive'}
+                      >
+                        {habit.is_archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(habit.id)}
+                        className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                        title="Delete Habit"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Title & Description */}
+                  <div className="mt-3">
+                    <h3 className="text-base font-bold text-slate-900 group-hover:text-black transition">
                       {habit.title}
                     </h3>
+                    {habit.description && (
+                      <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                        {habit.description}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditModal(habit)}
-                      title="Edit Habit"
-                      className="text-slate-300 hover:text-sky-600 p-1 transition cursor-pointer"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(habit.id)}
-                      title="Delete Habit"
-                      className="text-slate-300 hover:text-rose-500 p-1 transition cursor-pointer"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+
+                  {/* Custom Schedule Days Badges */}
+                  {habit.selected_days && habit.selected_days.length > 0 && (
+                    <div className="flex items-center gap-1 mt-2.5 flex-wrap">
+                      {DAYS_OF_WEEK.map((d) => {
+                        const isScheduled = habit.selected_days?.includes(d.id);
+                        return (
+                          <span
+                            key={d.id}
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                              isScheduled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
+                            }`}
+                          >
+                            {d.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Numeric Target Progress Bar */}
+                  {isNumeric && (
+                    <div className="mt-3.5 space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                        <span>Today&apos;s Progress</span>
+                        <span className="font-bold text-slate-900">
+                          {currentVal} / {targetVal} {habit.unit} ({progressPct}%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-slate-900 rounded-full transition-all duration-300"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Streak & Freeze Status Counters */}
+                  <div className="mt-4 flex items-center justify-between p-3 rounded-xl bg-slate-50/80 border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+                        <Flame className="h-4 w-4 fill-orange-500" />
+                      </div>
+                      <div>
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Streak
+                        </span>
+                        <span className="text-sm font-black text-slate-900">
+                          {habit.current_streak} days
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-100 text-cyan-600">
+                        <Shield className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Shields
+                        </span>
+                        <span className="text-sm font-black text-slate-900">
+                          {habit.freeze_tokens} left
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {habit.description && (
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    {habit.description}
-                  </p>
-                )}
+                {/* Bottom Actions: Log Measurement / Complete Button */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => setIsFreezeModalOpen(habit)}
+                    disabled={habit.freeze_tokens <= 0}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-cyan-700 disabled:opacity-40 transition cursor-pointer"
+                  >
+                    <Snowflake className="h-3.5 w-3.5 text-cyan-600" />
+                    <span>Freeze Token</span>
+                  </button>
 
-                {/* Streak Metric Banner */}
-                <div className="grid grid-cols-2 gap-2 bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                      <Flame className="h-4 w-4" />
+                  {isNumeric ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        placeholder="Log value"
+                        defaultValue={currentVal || ''}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const val = Number((e.target as HTMLInputElement).value);
+                            handleToggle(habit.id, val);
+                          }
+                        }}
+                        className="w-20 h-9 px-2 text-xs font-semibold rounded-xl border border-slate-200 text-center focus:outline-none focus:border-slate-900"
+                      />
+                      <button
+                        onClick={() => handleToggle(habit.id, habit.is_completed_today ? 0 : targetVal)}
+                        className={`h-9 px-3 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                          habit.is_completed_today
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-slate-900 text-white hover:bg-black'
+                        }`}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        <span>{habit.is_completed_today ? 'Done' : 'Target'}</span>
+                      </button>
                     </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-slate-400">Streak</p>
-                      <p className="text-sm font-bold text-slate-900">{habit.current_streak} days</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
-                      <Award className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-slate-400">Best</p>
-                      <p className="text-sm font-bold text-slate-900">{habit.best_streak} days</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Freeze Tokens Shield */}
-                <div className="flex items-center justify-between text-xs text-slate-600 pt-1">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <Shield className="h-3.5 w-3.5 text-sky-500" />
-                    <span>Freeze Shields: {habit.freeze_tokens}</span>
-                  </div>
-                  {habit.freeze_tokens > 0 && (
+                  ) : (
                     <button
-                      onClick={() => {
-                        setFreezeError(null);
-                        setIsFreezeModalOpen(habit);
-                      }}
-                      className="text-[11px] font-bold text-sky-600 hover:text-sky-700 underline cursor-pointer"
+                      onClick={() => handleToggle(habit.id)}
+                      className={`h-9 px-4 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        habit.is_completed_today
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-slate-900 text-white hover:bg-black'
+                      }`}
                     >
-                      Use Shield
+                      <Check className="h-3.5 w-3.5" />
+                      <span>{habit.is_completed_today ? 'Completed' : 'Check Today'}</span>
                     </button>
                   )}
                 </div>
-
-                {/* History & Consistency link */}
-                <div className="pt-1 border-t border-slate-100 flex items-center justify-between">
-                  <button
-                    onClick={() => openHistoryModal(habit)}
-                    className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition cursor-pointer"
-                  >
-                    <History className="h-3.5 w-3.5 text-slate-400" />
-                    <span>View History & Consistency</span>
-                  </button>
-                </div>
               </div>
-
-              {/* Check-in Action Button */}
-              <button
-                onClick={() => handleToggle(habit.id)}
-                className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs ${
-                  habit.is_completed_today
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    : 'bg-slate-900 text-white hover:bg-slate-800'
-                }`}
-              >
-                {habit.is_completed_today ? (
-                  <>
-                    <Check className="h-4 w-4" /> Completed Today
-                  </>
-                ) : (
-                  <>Check-in Today</>
-                )}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -360,22 +536,12 @@ export default function HabitsPage() {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Create New Habit"
-        description="Configure your routine frequency and freeze protection tokens."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setIsCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button loading={saving} onClick={handleCreate}>
-              Save Habit
-            </Button>
-          </>
-        }
+        maxWidth="md"
       >
         <form onSubmit={handleCreate} className="space-y-4">
           <Input
             label="Habit Title"
-            placeholder="e.g. Read 20 Pages of System Design"
+            placeholder="e.g. Read 20 Pages of Book"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
@@ -386,15 +552,29 @@ export default function HabitsPage() {
               Description
             </label>
             <textarea
-              rows={3}
-              placeholder="Why is this habit important to you?"
+              rows={2}
+              placeholder="Why is this routine important?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none"
+              className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-100"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Habit Type
+              </label>
+              <select
+                value={habitType}
+                onChange={(e) => setHabitType(e.target.value as any)}
+                className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-slate-900 focus:outline-none"
+              >
+                <option value="boolean">Checkmark (Yes / No)</option>
+                <option value="numeric">Numeric Measurement Target</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Frequency
@@ -402,22 +582,85 @@ export default function HabitsPage() {
               <select
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as any)}
-                className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-sky-500 focus:outline-none"
+                className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-slate-900 focus:outline-none"
               >
-                <option value="daily">Daily</option>
-                <option value="weekdays">Weekdays Only</option>
+                <option value="daily">Daily (Every Day)</option>
+                <option value="weekdays">Weekdays (Mon-Fri)</option>
                 <option value="weekly">Weekly</option>
               </select>
             </div>
+          </div>
 
+          {habitType === 'numeric' && (
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <Input
+                label="Target Value"
+                type="number"
+                placeholder="e.g. 2000"
+                value={targetValue}
+                onChange={(e) => setTargetValue(e.target.value)}
+                required
+              />
+              <Input
+                label="Unit of Measurement"
+                placeholder="e.g. ml, pages, steps"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                required
+              />
+            </div>
+          )}
+
+          {/* Custom Scheduled Days */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Scheduled Days (Optional Custom Schedule)
+            </label>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {DAYS_OF_WEEK.map((d) => {
+                const isSelected = selectedDays.includes(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDays((prev) =>
+                        prev.includes(d.id) ? prev.filter((id) => id !== d.id) : [...prev, d.id]
+                      );
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Initial Streak Freeze Shields
+            </label>
             <Input
-              label="Starting Freeze Shields"
               type="number"
               min={0}
               max={10}
               value={freezeTokens}
-              onChange={(e) => setFreezeTokens(parseInt(e.target.value) || 0)}
+              onChange={(e) => setFreezeTokens(Number(e.target.value))}
             />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setIsCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={saving} className="bg-slate-900 text-white hover:bg-black">
+              Create Habit
+            </Button>
           </div>
         </form>
       </Modal>
@@ -428,17 +671,7 @@ export default function HabitsPage() {
           isOpen={!!editHabit}
           onClose={() => setEditHabit(null)}
           title="Edit Habit"
-          description={`Update details and cadence for "${editHabit.title}".`}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setEditHabit(null)}>
-                Cancel
-              </Button>
-              <Button loading={savingEdit} onClick={handleSaveEdit}>
-                Save Changes
-              </Button>
-            </>
-          }
+          maxWidth="md"
         >
           <form onSubmit={handleSaveEdit} className="space-y-4">
             <Input
@@ -453,159 +686,155 @@ export default function HabitsPage() {
                 Description
               </label>
               <textarea
-                rows={3}
+                rows={2}
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-sky-500 focus:outline-none"
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-slate-900 focus:outline-none"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Frequency
-              </label>
-              <select
-                value={editFrequency}
-                onChange={(e) => setEditFrequency(e.target.value as any)}
-                className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-sky-500 focus:outline-none"
-              >
-                <option value="daily">Daily</option>
-                <option value="weekdays">Weekdays Only</option>
-                <option value="weekly">Weekly</option>
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Habit Type
+                </label>
+                <select
+                  value={editHabitType}
+                  onChange={(e) => setEditHabitType(e.target.value as any)}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-slate-900 focus:outline-none"
+                >
+                  <option value="boolean">Checkmark</option>
+                  <option value="numeric">Numeric Target</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Frequency
+                </label>
+                <select
+                  value={editFrequency}
+                  onChange={(e) => setEditFrequency(e.target.value as any)}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-sm focus:border-slate-900 focus:outline-none"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekdays">Weekdays</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+              <Button variant="secondary" onClick={() => setEditHabit(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={savingEdit} className="bg-slate-900 text-white hover:bg-black">
+                Save Changes
+              </Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* HABIT HISTORY & CONSISTENCY MODAL */}
-      {historyHabit && (
-        <Modal
-          isOpen={!!historyHabit}
-          onClose={() => setHistoryHabit(null)}
-          title={`Consistency & History`}
-          description={`Performance analytics and check-in timeline for "${historyHabit.title}".`}
-          footer={
-            <Button size="sm" onClick={() => setHistoryHabit(null)}>
-              Close
-            </Button>
-          }
-        >
-          {loadingHistory ? (
-            <div className="py-8 text-center text-xs text-slate-400">Loading history...</div>
-          ) : historyData ? (
-            <div className="space-y-4">
-              {/* Stats overview banner */}
-              <div className="grid grid-cols-3 gap-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                <div className="text-center">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Consistency</span>
-                  <span className="text-base font-bold text-sky-600">
-                    {historyData.statistics?.consistency_rate || 0}%
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Current Streak</span>
-                  <span className="text-base font-bold text-amber-600">
-                    {historyData.statistics?.current_streak || 0} d
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Checked</span>
-                  <span className="text-base font-bold text-emerald-600">
-                    {historyData.statistics?.total_completions || 0}
-                  </span>
-                </div>
-              </div>
-
-              {/* Logs Timeline */}
-              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-                  Recent Check-ins ({historyData.logs?.length || 0})
-                </span>
-                {historyData.logs && historyData.logs.length > 0 ? (
-                  historyData.logs.slice().reverse().map((log: any) => (
-                    <div
-                      key={log.id}
-                      className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 bg-white text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                        <span className="font-semibold text-slate-800">
-                          {new Date(log.log_date).toLocaleDateString(undefined, {
-                            weekday: 'short',
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                      </div>
-                      <div>
-                        {log.is_completed ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-                            <Check className="h-3 w-3" /> Completed
-                          </span>
-                        ) : log.is_frozen ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-md">
-                            <Shield className="h-3 w-3" /> Shielded
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md">
-                            Missed
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-400 italic py-2">
-                    No check-ins recorded yet. Check-in daily to build your activity history.
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400 italic py-4">Could not load habit history.</p>
-          )}
-        </Modal>
-      )}
-
-      {/* USE FREEZE TOKEN MODAL */}
+      {/* FREEZE TOKEN MODAL */}
       {isFreezeModalOpen && (
         <Modal
           isOpen={!!isFreezeModalOpen}
           onClose={() => setIsFreezeModalOpen(null)}
           title="Apply Streak Freeze Shield"
-          description={`Protect streak for "${isFreezeModalOpen.title}" on a missed day.`}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setIsFreezeModalOpen(null)}>
-                Cancel
-              </Button>
-              <Button onClick={handleApplyFreeze}>Apply Freeze</Button>
-            </>
-          }
+          maxWidth="sm"
         >
           <div className="space-y-4">
-            {freezeError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
-                <span>{freezeError}</span>
-              </div>
-            )}
             <p className="text-xs text-slate-600">
-              Applying a freeze shield consumes 1 shield token and preserves your active streak on the chosen date.
+              Protect your streak for a missed date. Freeze shields bridge gaps without breaking your momentum.
             </p>
+
             <Input
               label="Missed Date"
               type="date"
+              max={new Date().toISOString().split('T')[0]}
               value={freezeDate}
               onChange={(e) => setFreezeDate(e.target.value)}
-              required
             />
+
+            {freezeError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{freezeError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+              <Button variant="secondary" onClick={() => setIsFreezeModalOpen(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleApplyFreeze} className="bg-slate-900 text-white hover:bg-black">
+                Apply Freeze Shield
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* HISTORY MODAL */}
+      {historyHabit && (
+        <Modal
+          isOpen={!!historyHabit}
+          onClose={() => setHistoryHabit(null)}
+          title={`Consistency Analytics: ${historyHabit.title}`}
+          maxWidth="lg"
+        >
+          <div className="space-y-4">
+            {loadingHistory ? (
+              <p className="text-xs text-slate-500 py-6 text-center">Loading analytics...</p>
+            ) : historyData ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Current Streak</span>
+                    <p className="text-xl font-black text-slate-900 mt-0.5">{historyData.statistics?.current_streak} days</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Best Record</span>
+                    <p className="text-xl font-black text-slate-900 mt-0.5">{historyData.statistics?.best_streak} days</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Consistency Rate</span>
+                    <p className="text-xl font-black text-slate-900 mt-0.5">{historyData.statistics?.consistency_rate}%</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 mb-2">Completion Log Heatmap (Last 60 Days)</h4>
+                  <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto p-2 rounded-xl bg-slate-50 border border-slate-200">
+                    {historyData.logs?.map((log: any) => (
+                      <div
+                        key={log.id}
+                        title={`${log.log_date}: ${log.is_completed ? 'Completed' : log.used_freeze ? 'Freeze Applied' : 'Incomplete'}`}
+                        className={`h-5 w-5 rounded text-[9px] flex items-center justify-center font-bold ${
+                          log.is_completed
+                            ? 'bg-emerald-500 text-white'
+                            : log.used_freeze
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {new Date(log.log_date).getDate()}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <Button variant="secondary" onClick={() => setHistoryHabit(null)}>
+                Close
+              </Button>
+            </div>
           </div>
         </Modal>
       )}
     </div>
   );
 }
-

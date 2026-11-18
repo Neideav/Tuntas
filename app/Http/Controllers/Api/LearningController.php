@@ -307,11 +307,26 @@ class LearningController extends Controller
 
     public function sessionsStore(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'topic' => 'required|string|max:255',
             'duration_minutes' => 'required|integer|min:1',
-            'course_id' => 'nullable|exists:courses,id',
-            'lesson_id' => 'nullable|exists:learning_lessons,id',
+            'course_id' => [
+                'nullable',
+                Rule::exists('courses', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
+            'lesson_id' => [
+                'nullable',
+                Rule::exists('learning_lessons', 'id')->where(function ($query) use ($userId) {
+                    $query->whereIn('module_id', function ($sub) use ($userId) {
+                        $sub->select('learning_modules.id')
+                            ->from('learning_modules')
+                            ->join('courses', 'courses.id', '=', 'learning_modules.course_id')
+                            ->where('courses.user_id', $userId);
+                    });
+                }),
+            ],
             'notes' => 'nullable|string',
             'session_date' => 'required|date',
         ]);

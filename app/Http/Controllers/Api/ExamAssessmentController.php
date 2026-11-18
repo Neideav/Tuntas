@@ -10,6 +10,7 @@ use App\Models\QuestionBank;
 use App\Services\ExaminationAssessmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class ExamAssessmentController extends Controller
 {
@@ -229,6 +230,8 @@ class ExamAssessmentController extends Controller
 
     public function blueprintsStore(Request $request)
     {
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'subject' => 'required|string|max:100',
@@ -238,9 +241,12 @@ class ExamAssessmentController extends Controller
             'shuffle_questions' => 'nullable|boolean',
             'shuffle_options' => 'nullable|boolean',
             'max_attempts' => 'nullable|integer|min:0',
-            'course_id' => 'nullable|exists:courses,id',
+            'course_id' => [
+                'nullable',
+                Rule::exists('courses', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'starts_at' => 'nullable|date',
-            'ends_at' => 'nullable|date',
+            'ends_at' => 'nullable|date|after_or_equal:starts_at',
             'question_ids' => 'nullable|array',
             'question_ids.*' => 'exists:questions,id',
         ]);
@@ -341,6 +347,8 @@ class ExamAssessmentController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
+        $userId = $request->user()->id;
+
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'subject' => 'sometimes|string|max:100',
@@ -350,9 +358,12 @@ class ExamAssessmentController extends Controller
             'shuffle_questions' => 'nullable|boolean',
             'shuffle_options' => 'nullable|boolean',
             'max_attempts' => 'nullable|integer|min:0',
-            'course_id' => 'nullable|exists:courses,id',
+            'course_id' => [
+                'nullable',
+                Rule::exists('courses', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+            ],
             'starts_at' => 'nullable|date',
-            'ends_at' => 'nullable|date',
+            'ends_at' => 'nullable|date|after_or_equal:starts_at',
             'is_published' => 'nullable|boolean',
             'question_ids' => 'nullable|array',
             'question_ids.*' => 'exists:questions,id',
