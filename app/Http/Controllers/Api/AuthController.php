@@ -32,9 +32,12 @@ class AuthController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'role' => 'student',
             'timezone' => 'UTC',
         ]);
+
+        // Role assigned explicitly, bukan via mass-assignment, untuk mencegah privilege escalation
+        $user->role = 'student';
+        $user->save();
 
         // Initialize default user settings
         UserSetting::create([
@@ -70,15 +73,9 @@ class AuthController extends Controller
 
         $user = User::where('email', $credentials['email'])->first();
 
-        if (! $user) {
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['Email belum terdaftar. Silakan buat akun terlebih dahulu.'],
-            ]);
-        }
-
-        if (! Hash::check($credentials['password'], $user->password)) {
-            throw ValidationException::withMessages([
-                'password' => ['Kata sandi yang Anda masukkan salah. Silakan coba lagi.'],
+                'email' => ['Email atau kata sandi tidak valid.'],
             ]);
         }
 
@@ -129,7 +126,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'timezone' => 'nullable|string|max:50',
-            'avatar' => 'nullable|string',
+            'avatar' => 'nullable|url|max:500',
         ]);
 
         $user->update($validated);
@@ -185,8 +182,10 @@ class AuthController extends Controller
         $user = User::where('email', $validated['email'])->first();
 
         if (! $user) {
-            throw ValidationException::withMessages([
-                'email' => ['Email belum terdaftar di sistem Tuntas.'],
+            // Return success generik agar email terdaftar tidak bisa dienumerasi
+            return response()->json([
+                'success' => true,
+                'message' => 'Jika email terdaftar, tautan pemulihan kata sandi telah dikirim.',
             ]);
         }
 
@@ -215,8 +214,7 @@ class AuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Tautan pemulihan kata sandi telah dikirim ke alamat email Anda.',
-            'data' => app()->environment('local', 'testing') ? ['reset_token' => $plainToken] : null,
+            'message' => 'Jika email terdaftar, tautan pemulihan kata sandi telah dikirim.',
         ]);
     }
 

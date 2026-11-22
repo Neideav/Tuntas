@@ -85,7 +85,7 @@ class TaskController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $perPage = (int) $request->get('per_page', 50);
+        $perPage = min(100, max(1, (int) $request->get('per_page', 50)));
         $tasks = $query->paginate($perPage);
 
         return response()->json([

@@ -36,15 +36,17 @@ Route::prefix('v1')->group(function () {
         ]);
     });
 
-    // Public Authentication
-    Route::post('/auth/register', [AuthController::class, 'register']);
-    Route::post('/auth/login', [AuthController::class, 'login']);
-    Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
-    Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
+    // Public Authentication (rate limited)
+    Route::middleware('throttle:5,1')->post('/auth/register', [AuthController::class, 'register']);
+    Route::middleware('throttle:10,1')->group(function () {
+        Route::post('/auth/login', [AuthController::class, 'login']);
+        Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
+        Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
+    });
 
-    // Authenticated Routes (Sanctum)
-    Route::middleware('auth:sanctum')->group(function () {
-        // Auth session & Profile
+    // Authenticated Routes (Sanctum + rate limit)
+    Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
+        // Auth session & Profile (tidak perlu verified — user butuh akses untuk verifikasi)
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
@@ -59,6 +61,9 @@ Route::prefix('v1')->group(function () {
                 'data' => $logs,
             ]);
         });
+
+        // Routes berikut memerlukan email terverifikasi
+        Route::middleware('verified')->group(function () {
 
         // Dashboard Metrics
         Route::get('/dashboard', [DashboardController::class, 'index']);
@@ -177,5 +182,7 @@ Route::prefix('v1')->group(function () {
         Route::get('exam-grading', [ExamAssessmentController::class, 'gradingIndex']);
         Route::get('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingShow']);
         Route::post('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingStore']);
-    });
+
+        }); // end middleware('verified')
+    }); // end middleware(['auth:sanctum', 'throttle:60,1'])
 });
