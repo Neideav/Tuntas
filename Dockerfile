@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     postgresql-dev \
     linux-headers
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm
 RUN docker-php-ext-install pdo pdo_sqlite pdo_pgsql opcache bcmath
 
 # Install Composer
