@@ -4,6 +4,7 @@ FROM php:8.3-cli-alpine
 RUN apk add --no-cache \
     git \
     curl \
+    bash \
     nodejs \
     npm \
     libpng-dev \

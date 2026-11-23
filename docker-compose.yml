@@ -1,55 +1,15 @@
 services:
-  db:
-    image: mariadb:11
-    container_name: tuntas-db
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:-rootsecret}"
-      MYSQL_DATABASE: "${DB_DATABASE:-tuntas}"
-      MYSQL_USER: "${DB_USERNAME:-tuntas_user}"
-      MYSQL_PASSWORD: "${DB_PASSWORD:-secret}"
-    volumes:
-      - db-data:/var/lib/mysql
-    networks:
-      - tuntas-network
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tuntas-app
+    container_name: tuntas
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     ports:
-      - "8000:8000"
+      - "80:8000"
       - "3000:3000"
-    environment:
-      APP_NAME: Tuntas
-      APP_KEY: "${APP_KEY}"
-      APP_ENV: production
-      APP_DEBUG: "false"
-      APP_URL: "http://localhost:8000"
-      FRONTEND_URL: "http://localhost:3000"
-      SANCTUM_STATEFUL_DOMAINS: "localhost:3000,127.0.0.1:3000"
-      DB_CONNECTION: mysql
-      DB_HOST: db
-      DB_PORT: "3306"
-      DB_DATABASE: "${DB_DATABASE:-tuntas}"
-      DB_USERNAME: "${DB_USERNAME:-tuntas_user}"
-      DB_PASSWORD: "${DB_PASSWORD:-secret}"
-      SESSION_DRIVER: database
-      CACHE_STORE: database
-      QUEUE_CONNECTION: database
-      NEXT_PUBLIC_API_URL: "http://localhost:8000/api/v1"
     volumes:
+      - ./.env:/var/www/html/.env
       - app-storage:/var/www/html/storage
     networks:
       - tuntas-network
@@ -60,4 +20,3 @@ networks:
 
 volumes:
   app-storage:
-  db-data:

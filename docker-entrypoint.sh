@@ -1,14 +1,21 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 set -e
 
-# Wait for MariaDB/MySQL to be ready
-echo "Waiting for database connection..."
-until php artisan db:monitor 2>/dev/null || \
-      php -r "new PDO('mysql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT').';dbname='.getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD'));" 2>/dev/null; do
-  echo "Database not ready yet, retrying in 3s..."
-  sleep 3
-done
-echo "Database is ready."
+# Wait for MySQL/MariaDB (RDS) to be ready
+if [ -n "$DB_HOST" ] && [ "$DB_CONNECTION" = "mysql" ]; then
+  echo "Waiting for database at $DB_HOST:${DB_PORT:-3306}..."
+  until php -r "
+    new PDO(
+      'mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE'),
+      getenv('DB_USERNAME'),
+      getenv('DB_PASSWORD')
+    );
+  " 2>/dev/null; do
+    echo "Database not ready, retrying in 3s..."
+    sleep 3
+  done
+  echo "Database is ready."
+fi
 
 # Run database migrations
 php artisan migrate --force
