@@ -10,12 +10,11 @@ RUN apk add --no-cache \
     libxml2-dev \
     zip \
     unzip \
-    sqlite-dev \
-    postgresql-dev \
+    mysql-client \
     linux-headers
 
 RUN npm install -g pnpm
-RUN docker-php-ext-install pdo pdo_sqlite pdo_pgsql opcache bcmath
+RUN docker-php-ext-install pdo pdo_mysql opcache bcmath
 
 # Install Composer
 COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer
@@ -31,15 +30,13 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction
 # Install Node dependencies & build Next.js frontend
 RUN pnpm install --frozen-lockfile && pnpm run build
 
-# Prepare storage directories and SQLite database directory
+# Prepare storage directories
 RUN mkdir -p storage/framework/cache/data \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs \
     bootstrap/cache \
-    database/data \
-    && touch database/data/database.sqlite \
-    && chmod -R 777 storage bootstrap/cache database
+    && chmod -R 777 storage bootstrap/cache
 
 # Setup entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

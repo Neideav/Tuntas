@@ -1,9 +1,14 @@
 #!/usr/bin/env sh
 set -e
 
-# Ensure SQLite database directory & file exist
-mkdir -p database/data
-touch "${DB_DATABASE:-database/data/database.sqlite}" 2>/dev/null || true
+# Wait for MariaDB/MySQL to be ready
+echo "Waiting for database connection..."
+until php artisan db:monitor 2>/dev/null || \
+      php -r "new PDO('mysql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT').';dbname='.getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD'));" 2>/dev/null; do
+  echo "Database not ready yet, retrying in 3s..."
+  sleep 3
+done
+echo "Database is ready."
 
 # Run database migrations
 php artisan migrate --force
