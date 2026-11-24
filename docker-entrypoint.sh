@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Tuntas — Hardened Production Container Entrypoint
+# Tuntas — Hardened Production Container Entrypoint & Process Supervisor
+# Architecture: Next.js 15 + Laravel 12 + MariaDB + Queue Worker + Scheduler
 # ==============================================================================
 set -e
 
@@ -12,7 +13,6 @@ echo "Timezone configured to: $TZ"
 
 # 2. Ensure persistent APP_KEY is present (strictly no volatile ephemeral keys)
 if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
-  # Check if defined inside .env
   ENV_KEY=$(grep -E '^APP_KEY=base64:[A-Za-z0-9+/=]{44}' /var/www/html/.env 2>/dev/null | cut -d '=' -f2- || true)
   if [ -n "$ENV_KEY" ]; then
     export APP_KEY="$ENV_KEY"
@@ -124,37 +124,114 @@ if [ "$APP_ENV" = "production" ]; then
   php artisan view:cache 2>/dev/null || true
 fi
 
-# 7. Start Background Queue Worker
+# ==============================================================================
+# Process Supervision & Lifecycle Management
+# ==============================================================================
+TERMINATING=0
 QUEUE_PID=""
-if [ "$QUEUE_CONNECTION" != "sync" ] && [ -n "$QUEUE_CONNECTION" ]; then
-  echo "=== [5/7] Starting Background Queue Worker (driver: $QUEUE_CONNECTION) ==="
-  php artisan queue:work --sleep=3 --tries=3 --max-time=3600 &
-  QUEUE_PID=$!
-fi
+SCHEDULER_PID=""
+BACKEND_PID=""
+NEXT_PID=""
 
-# 8. Start Laravel Backend API on internal port 8000 (accessible by Nginx container)
-echo "=== [6/7] Starting Laravel API on internal port 0.0.0.0:8000 ==="
-php artisan serve --host=0.0.0.0 --port=8000 &
-BACKEND_PID=$!
-
-# 9. Graceful shutdown handler for container SIGTERM / SIGINT
 cleanup() {
-  echo "Caught termination signal. Gracefully stopping services..."
-  if [ -n "$QUEUE_PID" ]; then
-    echo "Signaling queue worker to stop gracefully..."
+  TERMINATING=1
+  echo ""
+  echo "⚠️ Caught termination signal (SIGTERM/SIGINT). Initiating graceful shutdown..."
+
+  # 1. Gracefully stop Queue Worker
+  if [ -n "$QUEUE_PID" ] && kill -0 "$QUEUE_PID" 2>/dev/null; then
+    echo "Stopping Queue Worker (PID: $QUEUE_PID)..."
     php artisan queue:restart 2>/dev/null || true
     kill -TERM "$QUEUE_PID" 2>/dev/null || true
-    wait "$QUEUE_PID" 2>/dev/null || true
   fi
-  if [ -n "$BACKEND_PID" ]; then
-    echo "Stopping Laravel API..."
+
+  # 2. Stop Scheduler Daemon
+  if [ -n "$SCHEDULER_PID" ] && kill -0 "$SCHEDULER_PID" 2>/dev/null; then
+    echo "Stopping Scheduler Daemon (PID: $SCHEDULER_PID)..."
+    kill -TERM "$SCHEDULER_PID" 2>/dev/null || true
+  fi
+
+  # 3. Stop Next.js Frontend
+  if [ -n "$NEXT_PID" ] && kill -0 "$NEXT_PID" 2>/dev/null; then
+    echo "Stopping Next.js Frontend (PID: $NEXT_PID)..."
+    kill -TERM "$NEXT_PID" 2>/dev/null || true
+  fi
+
+  # 4. Stop Laravel Backend API
+  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo "Stopping Laravel API (PID: $BACKEND_PID)..."
     kill -TERM "$BACKEND_PID" 2>/dev/null || true
-    wait "$BACKEND_PID" 2>/dev/null || true
   fi
+
+  # 5. Wait for child processes to exit cleanly
+  echo "Waiting for child processes to finish..."
+  wait 2>/dev/null || true
+  rm -f /tmp/scheduler-health.txt 2>/dev/null || true
+  echo "✅ All services stopped gracefully. Exiting container."
   exit 0
 }
+
+# Trap termination signals
 trap cleanup TERM INT
 
-# 10. Start Next.js Frontend on internal port 3000 (foreground process)
-echo "=== [7/7] Starting Next.js Frontend on internal port 3000 ==="
-exec pnpm run start -- -p 3000 -H 0.0.0.0
+# 7. Start Background Queue Worker (Auto-restarting supervisor loop)
+if [ "$QUEUE_CONNECTION" != "sync" ] && [ -n "$QUEUE_CONNECTION" ]; then
+  echo "=== [5/7] Starting Background Queue Worker (driver: $QUEUE_CONNECTION) ==="
+  (
+    while [ "$TERMINATING" = "0" ]; do
+      php artisan queue:work --sleep=3 --tries=3 --max-time=3600 || true
+      if [ "$TERMINATING" = "1" ]; then
+        break
+      fi
+      sleep 2
+    done
+  ) &
+  QUEUE_PID=$!
+  echo "Queue Worker started (PID: $QUEUE_PID)."
+fi
+
+# 8. Start Background Laravel Scheduler Daemon (Auto-restarting with logging & health heartbeat)
+echo "=== [6/7] Starting Production Laravel Scheduler Daemon ==="
+touch /var/www/html/storage/logs/scheduler.log
+(
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Scheduler daemon initialized." >> /var/www/html/storage/logs/scheduler.log
+  while [ "$TERMINATING" = "0" ]; do
+    php artisan schedule:run --no-interaction --verbose >> /var/www/html/storage/logs/scheduler.log 2>&1 || true
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/scheduler-health.txt
+    sleep 60
+  done
+) &
+SCHEDULER_PID=$!
+echo "Scheduler Daemon started (PID: $SCHEDULER_PID)."
+
+# 9. Start Laravel Backend API on internal port 8000
+echo "=== [7/7] Starting Laravel API on internal port 0.0.0.0:8000 ==="
+php artisan serve --host=0.0.0.0 --port=8000 &
+BACKEND_PID=$!
+echo "Laravel API started (PID: $BACKEND_PID)."
+
+# 10. Start Next.js Frontend Web on internal port 3000
+echo "=== Starting Next.js Web on internal port 0.0.0.0:3000 ==="
+pnpm run start -- -p 3000 -H 0.0.0.0 &
+NEXT_PID=$!
+echo "Next.js Web started (PID: $NEXT_PID)."
+
+echo ""
+echo "🚀 Tuntas Container Process Supervisor running (PID: $$). All services active."
+
+# Process Health Supervisor Loop
+while [ "$TERMINATING" = "0" ]; do
+  if ! kill -0 "$NEXT_PID" 2>/dev/null; then
+    echo "❌ FATAL: Next.js process (PID: $NEXT_PID) died unexpectedly!" >&2
+    cleanup
+    exit 1
+  fi
+
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo "❌ FATAL: Laravel API process (PID: $BACKEND_PID) died unexpectedly!" >&2
+    cleanup
+    exit 1
+  fi
+
+  sleep 2
+done

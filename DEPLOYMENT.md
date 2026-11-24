@@ -205,16 +205,23 @@ APP_ENV=production
 APP_DEBUG=false
 APP_TIMEZONE=Asia/Jakarta
 
-# URL Publik (Tanpa port :3000 atau :8000)
-# Jika menggunakan IP EC2:
+# =============================================================================
+# URL & SESSION MODE
+# =============================================================================
+# --- MODE 1: Akses Langsung via IP Publik EC2 (HTTP) ---
 APP_URL=http://EC2_PUBLIC_IP
 FRONTEND_URL=http://EC2_PUBLIC_IP
 CORS_ALLOWED_ORIGINS=http://EC2_PUBLIC_IP
+SANCTUM_STATEFUL_DOMAINS=EC2_PUBLIC_IP,localhost,127.0.0.1
+SESSION_SECURE_COOKIE=false  # Wajib false agar cookie session tidak ditolak browser di HTTP
 
-# Jika menggunakan Domain:
+# --- MODE 2: Akses via Domain Resmi dengan SSL (HTTPS) ---
+# Aktifkan setelah menjalankan ./scripts/setup-ssl.sh tuntas.id admin@tuntas.id:
 # APP_URL=https://tuntas.id
 # FRONTEND_URL=https://tuntas.id
 # CORS_ALLOWED_ORIGINS=https://tuntas.id,https://www.tuntas.id
+# SANCTUM_STATEFUL_DOMAINS=tuntas.id,www.tuntas.id,localhost,127.0.0.1
+# SESSION_SECURE_COOKIE=true   # Wajib true untuk proteksi Secure Cookie di HTTPS
 
 # Next.js Build Variables
 NEXT_PUBLIC_APP_NAME="Tuntas"
@@ -238,7 +245,6 @@ DB_SSL_VERIFY_CERT=true
 CACHE_STORE=database
 SESSION_DRIVER=database
 SESSION_LIFETIME=120
-SESSION_SECURE_COOKIE=false # Ubah ke true jika sudah aktif HTTPS
 SESSION_HTTP_ONLY=true
 SESSION_SAME_SITE=lax
 QUEUE_CONNECTION=database
@@ -305,7 +311,12 @@ docker compose ps
 ```
 
 Container yang berjalan:
-1. `tuntas` (`app`): Menjalankan Laravel API (port 8000), Next.js Web (port 3000), Queue Worker, dan Cron Runner.
+1. `tuntas` (`app`): Container aplikasi terpadu dengan process supervisor bash (PID 1):
+   - **Laravel API**: Port internal `8000`.
+   - **Next.js Web**: Port internal `3000`.
+   - **Queue Worker Daemon**: Auto-restarting worker dengan driver database (`--sleep=3 --tries=3 --max-time=3600`).
+   - **Laravel Scheduler Daemon**: Menjalankan cron tasks (`reminders:generate`) tiap menit, mencatat log ke `/var/www/html/storage/logs/scheduler.log`, dan memperbarui heartbeat `/tmp/scheduler-health.txt`.
+   - **Graceful Shutdown**: Menangani sinyal `SIGTERM`/`SIGINT`, memanggil `queue:restart`, dan menunggu seluruh proses anak berhenti dengan aman tanpa meninggalkan orphan process.
 2. `tuntas-nginx` (`nginx`): Reverse proxy pada port publik `80` dan `443`.
 3. `tuntas-certbot` (`certbot`): Menangani penerbitan dan renewal sertifikat SSL.
 
@@ -324,8 +335,9 @@ Jika Anda ingin menjalankan migrasi atau seeder secara manual dari host:
 # Jalankan migrasi
 docker compose exec app php artisan migrate --force
 
-# Buat akun administrator resmi (tanpa mock seeders)
-docker compose exec app php artisan admin:create --name="Admin Tuntas" --email="admin@tuntas.id" --password="PasswordKuat123!"
+# Buat akun administrator resmi dengan input password tersembunyi (aman dari bash history & process inspection)
+docker compose exec app php artisan admin:create --name="Admin Tuntas" --email="admin@tuntas.id"
+# Sistem akan meminta input password secara tersembunyi dan mengonfirmasinya.
 ```
 
 ---

@@ -36,7 +36,19 @@ class CreateAdminUserCommand extends Command
     {
         $email = $this->option('email') ?: $this->ask('Enter Administrator Email');
         $name = $this->option('name') ?: $this->ask('Enter Administrator Name', 'Administrator');
-        $password = $this->option('password') ?: $this->secret('Enter Administrator Password (hidden)');
+        
+        $password = $this->option('password');
+        if ($password) {
+            $this->warn('⚠️ Security Notice: Supplying passwords via command-line options may expose credentials in shell history and process inspection (ps). In production, prefer interactive prompt without --password.');
+        } else {
+            $password = $this->secret('Enter Administrator Password (hidden, min 8 chars)');
+            $confirm = $this->secret('Confirm Administrator Password');
+            if ($password !== $confirm) {
+                $this->error('❌ Passwords do not match.');
+                return 1;
+            }
+        }
+
         $role = $this->option('role') ?: 'admin';
 
         // Validate Inputs

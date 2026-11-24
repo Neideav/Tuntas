@@ -14,13 +14,14 @@ RUN apk add --no-cache \
     unzip \
     mysql-client \
     mariadb-connector-c \
+    oniguruma-dev \
     linux-headers \
     && update-ca-certificates \
     && curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/ssl/certs/global-bundle.pem \
     && chmod 644 /etc/ssl/certs/global-bundle.pem
 
 RUN npm install -g pnpm
-RUN docker-php-ext-install pdo pdo_mysql opcache bcmath
+RUN docker-php-ext-install pdo pdo_mysql opcache bcmath mbstring pcntl
 
 # Install Composer from official image
 COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer
