@@ -427,7 +427,10 @@ Jika Anda memiliki domain (misal: `tuntas.id`):
 5. **Verifikasi Renewal Otomatis**:
    Sertifikat akan di-renew secara otomatis oleh Certbot. Anda dapat mengujinya dengan simulasi dry-run:
    ```bash
+   ./scripts/setup-ssl.sh --dry-run
+   # Atau langsung via docker compose:
    docker compose run --rm certbot renew --dry-run
+   ```
    ```
 
 ---

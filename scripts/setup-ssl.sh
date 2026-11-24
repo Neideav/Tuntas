@@ -2,9 +2,20 @@
 # ==============================================================================
 # Tuntas — Hardened Automated SSL / HTTPS Provisioning Script (Certbot + Nginx)
 # Usage: ./scripts/setup-ssl.sh <domain.com> [admin-email]
+# Dry-run: ./scripts/setup-ssl.sh --dry-run
 # Example: ./scripts/setup-ssl.sh tuntas.id admin@tuntas.id
 # ==============================================================================
 set -e
+
+# Handle Dry-Run Renewal Mode
+if [ "$1" = "--dry-run" ] || [ "$1" = "dry-run" ]; then
+  echo "======================================================"
+  echo "🧪 Running Certbot Certificate Renewal Dry-Run Test"
+  echo "======================================================"
+  docker compose run --rm certbot renew --dry-run
+  echo "✅ Renewal dry-run simulation completed successfully."
+  exit 0
+fi
 
 DOMAIN=$1
 EMAIL=$2
@@ -12,6 +23,7 @@ EMAIL=$2
 if [ -z "$DOMAIN" ]; then
   echo "❌ Error: Domain is required."
   echo "Usage: $0 <domain.com> [admin-email]"
+  echo "   Or: $0 --dry-run"
   echo "Example: $0 tuntas.id admin@tuntas.id"
   exit 1
 fi
@@ -110,17 +122,20 @@ if [ "$CERT_SUCCESS" != true ]; then
   exit 1
 fi
 
-# 5. Validate Certificate Files Existence before activating HTTPS in Nginx
+# 5. Validate Certificate Files Existence using shell entrypoint override & Nginx read check
 echo "🔎 [5/6] Validating generated certificate and private key files..."
-if ! docker compose run --rm certbot test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"; then
-  echo "❌ FATAL: /etc/letsencrypt/live/${DOMAIN}/fullchain.pem not found!" >&2
+# Check volume via certbot container using explicit shell entrypoint
+if ! docker compose run --rm --entrypoint sh certbot -c "[ -s /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ] && [ -s /etc/letsencrypt/live/${DOMAIN}/privkey.pem ]"; then
+  echo "❌ FATAL: Certificate verification failed! fullchain.pem or privkey.pem is missing or empty in Certbot volume." >&2
   exit 1
 fi
-if ! docker compose run --rm certbot test -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem"; then
-  echo "❌ FATAL: /etc/letsencrypt/live/${DOMAIN}/privkey.pem not found!" >&2
+
+# Check that Nginx can actually read the certificate files
+if ! docker compose exec -T nginx sh -c "[ -r /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ] && [ -r /etc/letsencrypt/live/${DOMAIN}/privkey.pem ]"; then
+  echo "❌ FATAL: Nginx cannot read certificate files at /etc/letsencrypt/live/${DOMAIN}/. Check volume mounts and permissions!" >&2
   exit 1
 fi
-echo "✅ Certificate and private key files verified."
+echo "✅ Certificate and private key files verified readable by Nginx."
 
 # 6. Generate Nginx SSL Configuration & Reload
 echo "⚙️ [6/6] Generating Nginx SSL configuration and testing syntax..."
@@ -155,15 +170,21 @@ rm -f "${TARGET_FILE}.bak" 2>/dev/null || true
 docker compose exec nginx nginx -s reload
 echo "✅ Nginx syntax verified and service reloaded with SSL active."
 
-# 7. Configure Automated Renewal Crontab on Host (Duplicate-safe)
+# 7. Configure Automated Renewal Crontab on Host (Duplicate-safe & availability checked)
 CRON_CMD="0 3 * * * cd $(pwd) && docker compose run --rm certbot renew --webroot -w /var/www/certbot --quiet && docker compose exec -T nginx nginx -s reload >> /var/log/certbot-renew.log 2>&1"
-CURRENT_CRONTAB=$(crontab -l 2>/dev/null || true)
 
-if echo "$CURRENT_CRONTAB" | grep -q "certbot renew"; then
-  echo "✅ Automated daily certificate renewal cron job already exists in crontab."
+if command -v crontab >/dev/null 2>&1; then
+  CURRENT_CRONTAB=$(crontab -l 2>/dev/null || true)
+  if echo "$CURRENT_CRONTAB" | grep -q "certbot renew"; then
+    echo "✅ Automated daily certificate renewal cron job already exists in crontab."
+  else
+    (echo "$CURRENT_CRONTAB"; echo "$CRON_CMD") | crontab -
+    echo "✅ Automated daily certificate renewal added to crontab (03:00 daily)."
+  fi
 else
-  (echo "$CURRENT_CRONTAB"; echo "$CRON_CMD") | crontab -
-  echo "✅ Automated daily certificate renewal added to crontab (03:00 daily)."
+  echo "⚠️ Notice: 'crontab' command is not available on this host environment."
+  echo "👉 On Ubuntu host, ensure cron is active (sudo apt install -y cron) and add:"
+  echo "   $CRON_CMD"
 fi
 
 echo ""

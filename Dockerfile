@@ -15,6 +15,7 @@ RUN apk add --no-cache \
     mysql-client \
     mariadb-connector-c \
     oniguruma-dev \
+    util-linux \
     linux-headers \
     && update-ca-certificates \
     && curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/ssl/certs/global-bundle.pem \

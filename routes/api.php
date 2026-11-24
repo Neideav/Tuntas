@@ -39,22 +39,25 @@ Route::prefix('v1')->group(function () {
 
         // Verify scheduler heartbeat
         $heartbeatFile = storage_path('framework/scheduler_heartbeat.txt');
-        $schedulerActive = false;
+        $schedulerStatus = 'inactive';
         $lastHeartbeat = null;
+        $ageSeconds = null;
 
         if (file_exists($heartbeatFile)) {
             $mtime = filemtime($heartbeatFile);
             $lastHeartbeat = date('c', $mtime);
-            // Considered active if heartbeat file was modified within 180 seconds (3 minutes)
-            if ((time() - $mtime) <= 180) {
-                $schedulerActive = true;
+            $ageSeconds = time() - $mtime;
+            // Considered active if heartbeat file was modified within 150 seconds (2.5 cycles)
+            if ($ageSeconds <= 150) {
+                $schedulerStatus = 'active';
+            } else {
+                $schedulerStatus = 'stale';
             }
         }
 
-        // In production, both database and scheduler must be operational.
-        // In local/testing environments, DB connectivity determines base health.
+        // In production, both database must be connected and scheduler must be active
         $isHealthy = config('app.env') === 'production'
-            ? ($dbConnected && $schedulerActive)
+            ? ($dbConnected && $schedulerStatus === 'active')
             : $dbConnected;
 
         return response()->json([
@@ -66,11 +69,12 @@ Route::prefix('v1')->group(function () {
             'timestamp' => now()->toIso8601String(),
             'services' => [
                 'database' => $dbConnected ? 'connected' : 'disconnected',
-                'scheduler' => $schedulerActive ? 'active' : 'inactive',
+                'scheduler' => $schedulerStatus,
             ],
             'scheduler' => [
-                'status' => $schedulerActive ? 'active' : 'inactive',
+                'status' => $schedulerStatus,
                 'last_heartbeat' => $lastHeartbeat,
+                'age_seconds' => $ageSeconds,
             ],
         ], $isHealthy ? 200 : 503);
     });
