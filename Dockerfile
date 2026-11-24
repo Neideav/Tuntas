@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     git \
     curl \
     bash \
+    ca-certificates \
     nodejs \
     npm \
     libpng-dev \
@@ -12,7 +13,10 @@ RUN apk add --no-cache \
     zip \
     unzip \
     mysql-client \
-    linux-headers
+    mariadb-connector-c \
+    linux-headers \
+    && update-ca-certificates \
+    && curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/ssl/certs/global-bundle.pem || true
 
 RUN npm install -g pnpm
 RUN docker-php-ext-install pdo pdo_mysql opcache bcmath
@@ -24,6 +28,10 @@ WORKDIR /var/www/html
 
 # Copy application files
 COPY . .
+
+# Build Arguments for Next.js frontend build
+ARG NEXT_PUBLIC_API_URL=/api/v1
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction

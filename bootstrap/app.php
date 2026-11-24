@@ -13,7 +13,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Integrate TRUSTED_PROXIES with Laravel 11/12 trustProxies mechanism
+        $trustedProxies = env('TRUSTED_PROXIES');
+        if ($trustedProxies) {
+            $proxies = $trustedProxies === '*'
+                ? '*'
+                : array_map('trim', explode(',', $trustedProxies));
+            $middleware->trustProxies(at: $proxies);
+        }
+
+        // Attach security headers to all responses
+        $middleware->append(\App\Http\Middleware\SecurityHeadersMiddleware::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) {

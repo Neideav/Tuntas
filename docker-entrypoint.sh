@@ -2,7 +2,7 @@
 set -e
 
 # Wait for MySQL/MariaDB (RDS) to be ready
-if [ -n "$DB_HOST" ] && [ "$DB_CONNECTION" = "mysql" ]; then
+if [ -n "$DB_HOST" ] && { [ "$DB_CONNECTION" = "mysql" ] || [ "$DB_CONNECTION" = "mariadb" ]; }; then
   echo "Waiting for database at $DB_HOST:${DB_PORT:-3306}..."
   until php -r "
     new PDO(
@@ -31,8 +31,16 @@ fi
 php artisan serve --host=0.0.0.0 --port=8000 &
 BACKEND_PID=$!
 
+# Start background Queue Worker in production if enabled
+QUEUE_PID=""
+if [ "$QUEUE_CONNECTION" != "sync" ] && [ -n "$QUEUE_CONNECTION" ]; then
+  echo "Starting background queue worker..."
+  php artisan queue:work --sleep=3 --tries=3 --max-time=3600 &
+  QUEUE_PID=$!
+fi
+
 # Trap termination signals to shut down child process cleanly
-trap 'kill $BACKEND_PID 2>/dev/null || true; exit 0' TERM INT
+trap 'kill $BACKEND_PID $QUEUE_PID 2>/dev/null || true; exit 0' TERM INT
 
 # Start Next.js frontend in foreground
 exec pnpm run start
