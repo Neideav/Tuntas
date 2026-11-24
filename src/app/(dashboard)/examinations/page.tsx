@@ -260,6 +260,36 @@ export default function ExaminationsPage() {
     }
   };
 
+  const handleDeleteSchedule = async (scheduleId: number) => {
+    if (!confirm('Are you sure you want to delete this scheduled examination?')) return;
+    try {
+      await api.delete(`/examinations/${scheduleId}`);
+      fetchData();
+    } catch (err: unknown) {
+      alert(extractApiErrorMessage(err, 'Failed to delete scheduled examination.'));
+    }
+  };
+
+  const handleDeleteBlueprint = async (blueprintId: number) => {
+    if (!confirm('Are you sure you want to delete this exam blueprint?')) return;
+    try {
+      await api.delete(`/exam-blueprints/${blueprintId}`);
+      fetchData();
+    } catch (err: unknown) {
+      alert(extractApiErrorMessage(err, 'Failed to delete exam blueprint.'));
+    }
+  };
+
+  const handleDeleteQuestion = async (questionId: number) => {
+    if (!confirm('Are you sure you want to delete this question?')) return;
+    try {
+      await api.delete(`/questions/${questionId}`);
+      fetchData();
+    } catch (err: unknown) {
+      alert(extractApiErrorMessage(err, 'Failed to delete question.'));
+    }
+  };
+
   const handleAddQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isQuestionModalOpen || !qPrompt.trim()) return;
@@ -432,9 +462,19 @@ export default function ExaminationsPage() {
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     {exam.subject}
                   </span>
-                  <Badge variant={exam.status === 'completed' ? 'success' : 'default'}>
-                    {exam.status}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant={exam.status === 'completed' ? 'success' : 'default'}>
+                      {exam.status}
+                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSchedule(exam.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                      title="Delete Schedule"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <h3 className="text-base font-bold text-slate-900 leading-tight">{exam.title}</h3>
                 <div className="space-y-1.5 text-xs text-slate-500 pt-2 border-t border-slate-100">
@@ -506,13 +546,23 @@ export default function ExaminationsPage() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={() => handleStartExam(bp.id)}
-                  leftIcon={<Play className="h-4 w-4" />}
-                  className="w-full font-bold"
-                >
-                  Start Examination
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => handleStartExam(bp.id)}
+                    leftIcon={<Play className="h-4 w-4" />}
+                    className="flex-1 font-bold"
+                  >
+                    Start Examination
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDeleteBlueprint(bp.id)}
+                    title="Delete Blueprint"
+                    className="px-3"
+                  >
+                    <Trash2 className="h-4 w-4 text-slate-400 hover:text-rose-600" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -584,6 +634,41 @@ export default function ExaminationsPage() {
                     </Button>
                   </div>
                 </div>
+
+                {bank.questions && bank.questions.length > 0 && (
+                  <div className="space-y-2 pt-1 border-t border-slate-100 max-h-60 overflow-y-auto">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Questions ({bank.questions.length})
+                    </p>
+                    {bank.questions.map((q: any, idx: number) => (
+                      <div
+                        key={q.id}
+                        className="group flex items-start justify-between gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-xs"
+                      >
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-500">#{idx + 1}</span>
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {q.type}
+                            </Badge>
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              {q.points || 1} pt(s)
+                            </span>
+                          </div>
+                          <p className="text-slate-800 font-medium line-clamp-2">{q.prompt}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteQuestion(q.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          title="Delete Question"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

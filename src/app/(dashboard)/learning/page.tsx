@@ -214,6 +214,17 @@ export default function LearningPage() {
     }
   };
 
+  const handleDeleteCourse = async (courseId: number) => {
+    if (!confirm('Are you sure you want to delete this course and all its modules/lessons?')) return;
+    try {
+      await api.delete(`/courses/${courseId}`);
+      fetchData();
+    } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal menghapus kursus.'));
+      console.error(err);
+    }
+  };
+
   const handleCreateModule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!moduleTitle.trim() || !activeModuleCourseId) return;
@@ -437,11 +448,24 @@ export default function LearningPage() {
                         </div>
                       </div>
 
-                      {isExpanded ? (
-                        <ChevronDown className="h-5 w-5 text-slate-400" />
-                      ) : (
-                        <ChevronRight className="h-5 w-5 text-slate-400" />
-                      )}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCourse(course.id);
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          title="Delete Course"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        {isExpanded ? (
+                          <ChevronDown className="h-5 w-5 text-slate-400" />
+                        ) : (
+                          <ChevronRight className="h-5 w-5 text-slate-400" />
+                        )}
+                      </div>
                     </div>
                   </div>
 

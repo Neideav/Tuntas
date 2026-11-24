@@ -29,6 +29,7 @@ class ExamAssessmentController extends Controller
     {
         $banks = QuestionBank::where('user_id', $request->user()->id)
             ->withCount('questions')
+            ->with(['questions.options'])
             ->orderBy('id', 'desc')
             ->get();
 

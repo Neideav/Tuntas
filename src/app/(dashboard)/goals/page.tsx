@@ -235,6 +235,18 @@ export default function GoalsPage() {
     }
   };
 
+  const handleDeleteMilestone = async (milestoneId: number) => {
+    if (!confirm('Are you sure you want to remove this Key Result?')) return;
+    try {
+      const res = await api.delete(`/milestones/${milestoneId}`);
+      if (res.data?.success) {
+        fetchGoals();
+      }
+    } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal menghapus Key Result.'));
+    }
+  };
+
   const handleDeleteGoal = async (id: number) => {
     if (!confirm('Are you sure you want to delete this goal?')) return;
     try {
@@ -428,9 +440,19 @@ export default function GoalsPage() {
                                 <span className="font-bold text-slate-800 truncate max-w-[200px]">
                                   {m.title}
                                 </span>
-                                <span className="font-semibold text-slate-600">
-                                  {m.current_value} / {m.target_value} {m.unit} ({ratio}%)
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-slate-600">
+                                    {m.current_value} / {m.target_value} {m.unit} ({ratio}%)
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMilestone(m.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                    title="Delete Key Result"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="flex items-center gap-2">

@@ -221,6 +221,29 @@ export default function ProjectsPage() {
     }
   };
 
+  const handleDeleteMilestone = async (projectId: number, milestoneId: number) => {
+    try {
+      const res = await api.delete(`/projects/${projectId}/milestones/${milestoneId}`);
+      if (res.data?.success) {
+        const newProgress = res.data.data?.project_progress;
+        setProjects((prev) =>
+          prev.map((p) => {
+            if (p.id === projectId) {
+              return {
+                ...p,
+                progress: typeof newProgress === 'number' ? newProgress : p.progress,
+                milestones: p.milestones?.filter((m) => m.id !== milestoneId),
+              };
+            }
+            return p;
+          })
+        );
+      }
+    } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal menghapus milestone.'));
+    }
+  };
+
   const handleAddMilestone = async (projectId: number) => {
     if (!newMilestoneTitle.trim()) return;
     try {
@@ -484,20 +507,30 @@ export default function ProjectsPage() {
                     {milestones.length > 0 && (
                       <div className="space-y-1.5 max-h-32 overflow-y-auto pt-1">
                         {milestones.map((m) => (
-                          <label
+                          <div
                             key={m.id}
-                            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 transition cursor-pointer text-xs"
+                            className="group flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-50 transition text-xs"
                           >
-                            <input
-                              type="checkbox"
-                              checked={m.is_completed}
-                              onChange={() => handleToggleMilestone(project.id, m.id)}
-                              className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
-                            />
-                            <span className={`truncate ${m.is_completed ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}`}>
-                              {m.title}
-                            </span>
-                          </label>
+                            <label className="flex items-center gap-2 cursor-pointer truncate flex-1">
+                              <input
+                                type="checkbox"
+                                checked={m.is_completed}
+                                onChange={() => handleToggleMilestone(project.id, m.id)}
+                                className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                              />
+                              <span className={`truncate ${m.is_completed ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}`}>
+                                {m.title}
+                              </span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMilestone(project.id, m.id)}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-600 transition"
+                              title="Delete milestone"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
