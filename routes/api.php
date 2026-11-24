@@ -55,9 +55,31 @@ Route::prefix('v1')->group(function () {
             }
         }
 
-        // In production, both database must be connected and scheduler must be active
-        $isHealthy = config('app.env') === 'production'
-            ? ($dbConnected && $schedulerStatus === 'active')
+        // Verify queue worker heartbeat
+        $queueHeartbeatFile = storage_path('framework/queue_worker_heartbeat.txt');
+        $queueStatus = 'inactive';
+        $queueLastHeartbeat = null;
+        $queueAgeSeconds = null;
+
+        if (file_exists($queueHeartbeatFile)) {
+            $mtime = filemtime($queueHeartbeatFile);
+            $queueLastHeartbeat = date('c', $mtime);
+            $queueAgeSeconds = time() - $mtime;
+            // Considered active if modified within 60 seconds (worker loops every 3-10s)
+            if ($queueAgeSeconds <= 60) {
+                $queueStatus = 'active';
+            } else {
+                $queueStatus = 'stale';
+            }
+        }
+
+        // In production, database, scheduler, and queue worker must all be operational
+        $isProduction = config('app.env') === 'production';
+        $queueDriver = config('queue.default');
+        $queueRequired = $isProduction && $queueDriver !== 'sync';
+
+        $isHealthy = $isProduction
+            ? ($dbConnected && $schedulerStatus === 'active' && (!$queueRequired || $queueStatus === 'active'))
             : $dbConnected;
 
         return response()->json([
@@ -70,11 +92,20 @@ Route::prefix('v1')->group(function () {
             'services' => [
                 'database' => $dbConnected ? 'connected' : 'disconnected',
                 'scheduler' => $schedulerStatus,
+                'queue' => $queueStatus,
             ],
-            'scheduler' => [
-                'status' => $schedulerStatus,
-                'last_heartbeat' => $lastHeartbeat,
-                'age_seconds' => $ageSeconds,
+            'details' => [
+                'scheduler' => [
+                    'status' => $schedulerStatus,
+                    'last_heartbeat' => $lastHeartbeat,
+                    'age_seconds' => $ageSeconds,
+                ],
+                'queue' => [
+                    'driver' => $queueDriver,
+                    'status' => $queueStatus,
+                    'last_heartbeat' => $queueLastHeartbeat,
+                    'age_seconds' => $queueAgeSeconds,
+                ],
             ],
         ], $isHealthy ? 200 : 503);
     });

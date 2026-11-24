@@ -10,7 +10,7 @@ export const getBaseURL = (): string => {
   if (isServer) {
     return process.env.INTERNAL_API_URL ||
            process.env.BACKEND_API_URL?.replace('/api/:path*', '/api/v1') ||
-           'http://127.0.0.1:8000/api/v1';
+           'http://nginx/api/v1';
   }
   return process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 };

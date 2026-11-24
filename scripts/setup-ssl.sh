@@ -170,7 +170,24 @@ rm -f "${TARGET_FILE}.bak" 2>/dev/null || true
 docker compose exec nginx nginx -s reload
 echo "✅ Nginx syntax verified and service reloaded with SSL active."
 
-# 7. Configure Automated Renewal Crontab on Host (Duplicate-safe & availability checked)
+# 7. Configure Automated Renewal Crontab on Host (Duplicate-safe & daemon checked)
+echo "⏰ [7/7] Configuring automatic certificate renewal..."
+
+# Check if cron service daemon is actually active
+CRON_DAEMON_RUNNING=false
+if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; then
+  CRON_DAEMON_RUNNING=true
+elif command -v systemctl >/dev/null 2>&1 && { systemctl is-active --quiet cron 2>/dev/null || systemctl is-active --quiet crond 2>/dev/null; }; then
+  CRON_DAEMON_RUNNING=true
+fi
+
+if [ "$CRON_DAEMON_RUNNING" = true ]; then
+  echo "✅ Host cron daemon is active and running."
+else
+  echo "⚠️ Warning: The cron daemon (cron/crond) does not appear to be running on this host!"
+  echo "👉 On Ubuntu EC2, activate it with: sudo systemctl enable --now cron"
+fi
+
 CRON_CMD="0 3 * * * cd $(pwd) && docker compose run --rm certbot renew --webroot -w /var/www/certbot --quiet && docker compose exec -T nginx nginx -s reload >> /var/log/certbot-renew.log 2>&1"
 
 if command -v crontab >/dev/null 2>&1; then

@@ -1,6 +1,7 @@
 # ==============================================================================
 # Tuntas — Nginx HTTPS SSL Configuration Template (Let's Encrypt / Certbot)
 # Replace {{DOMAIN}} with your domain (e.g. tuntas.id)
+# Backend Runtime: PHP-FPM 8.3 (FastCGI app:9000)
 # ==============================================================================
 
 # HTTP -> HTTPS Redirect (Only for configured Domain, keeping IP access intact)
@@ -57,21 +58,49 @@ server {
         access_log off;
     }
 
-    # 2. Laravel API Backend Routing
+    # 2. Laravel API Backend Routing (/api/ and /api/v1/) via PHP-FPM FastCGI
     location /api/ {
-        proxy_pass http://app:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Port 443;
-        proxy_read_timeout 120s;
-        proxy_connect_timeout 60s;
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        fastcgi_split_path_info ^(/api)(/.*)$;
+        fastcgi_param SCRIPT_FILENAME /var/www/html/public/index.php;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_param REQUEST_URI $request_uri;
+        fastcgi_param QUERY_STRING $query_string;
+        fastcgi_param REQUEST_METHOD $request_method;
+        fastcgi_param CONTENT_TYPE $content_type;
+        fastcgi_param CONTENT_LENGTH $content_length;
+        fastcgi_param SERVER_PROTOCOL $server_protocol;
+        fastcgi_param SERVER_PORT 443;
+        fastcgi_param SERVER_NAME $host;
+        fastcgi_param REMOTE_ADDR $remote_addr;
+        fastcgi_param REMOTE_PORT $remote_port;
+        fastcgi_param HTTP_HOST $host;
+        fastcgi_param HTTP_X_REAL_IP $remote_addr;
+        fastcgi_param HTTP_X_FORWARDED_FOR $proxy_add_x_forwarded_for;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+        fastcgi_param HTTP_X_FORWARDED_HOST $host;
+        fastcgi_param HTTP_X_FORWARDED_PORT 443;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 120s;
+        fastcgi_read_timeout 120s;
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 4 256k;
+        fastcgi_busy_buffers_size 256k;
+        include fastcgi_params;
     }
 
-    # 3. Next.js Frontend Application & WebSockets
+    # 3. Laravel Public Storage Assets (Avatars, Uploads, Media)
+    location /storage/ {
+        alias /var/www/html/storage/app/public/;
+        expires 30d;
+        access_log off;
+        try_files $uri =404;
+    }
+
+    # 4. Next.js Frontend Application & Dynamic Pages
     location / {
         proxy_pass http://app:3000;
         proxy_http_version 1.1;

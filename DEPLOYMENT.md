@@ -23,18 +23,18 @@ Setelah deployment berhasil, aplikasi dapat diakses langsung tanpa menyertakan p
                       │   (Reverse Proxy & SSL)     │
                       └──────┬───────────────┬──────┘
                              │               │
-            Routing Frontend │               │ Routing Backend
+            Routing Frontend │               │ Routing Backend FastCGI
             location /       │               │ location /api/
                              ▼               ▼
                       ┌──────────────┐┌──────────────┐
-                      │ Next.js Web  ││ Laravel API  │
-                      │ Port: 3000   ││ Port: 8000   │
+                      │ Next.js Web  ││ PHP-FPM 8.3  │
+                      │ Port: 3000   ││ Port: 9000   │
                       │ (Internal)   ││ (Internal)   │
                       └──────────────┘└──────────────┘
                        ▲              ▲
                        └──────┬───────┘
                               │ Bridge Network: tuntas-network
-                              │ (Port 3000 & 8000 TIDAK diekspos ke publik)
+                              │ (Port 3000 & 9000 TIDAK diekspos ke publik)
                               ▼
                       ┌─────────────────────────────┐
                       │ AWS RDS / MariaDB Database  │
@@ -43,7 +43,7 @@ Setelah deployment berhasil, aplikasi dapat diakses langsung tanpa menyertakan p
 ```
 
 - **Satu Gateway Publik**: Hanya service `tuntas-nginx` yang mempublikasikan port `80` (HTTP) dan `443` (HTTPS).
-- **Port Terisolasi**: Port Next.js `3000` dan Laravel `8000` hanya terbuka di jaringan bridge internal Docker (`tuntas-network`).
+- **Port Terisolasi**: Port Next.js `3000` dan PHP-FPM `9000` hanya terbuka di jaringan bridge internal Docker (`tuntas-network`).
 - **Akses Langsung via IP**: Request ke IP publik EC2 langsung dilayani via HTTP tanpa redirect keliru ke HTTPS.
 - **SSL / HTTPS Otomatis**: Request ke domain dengan SSL aktif otomatis dialihkan dari HTTP (80) ke HTTPS (443) dengan HTTP/2 dan TLS 1.2/1.3.
 
@@ -387,11 +387,21 @@ curl -i http://localhost/api/v1/health
   "timestamp": "2026-11-24T12:00:00Z",
   "services": {
     "database": "connected",
-    "scheduler": "active"
+    "scheduler": "active",
+    "queue": "active"
   },
-  "scheduler": {
-    "status": "active",
-    "last_heartbeat": "2026-11-24T12:00:00Z"
+  "details": {
+    "scheduler": {
+      "status": "active",
+      "last_heartbeat": "2026-11-24T12:00:00Z",
+      "age_seconds": 12
+    },
+    "queue": {
+      "driver": "database",
+      "status": "active",
+      "last_heartbeat": "2026-11-24T12:00:00Z",
+      "age_seconds": 5
+    }
   }
 }
 ```

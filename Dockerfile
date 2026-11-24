@@ -1,4 +1,4 @@
-FROM php:8.3-cli-alpine
+FROM php:8.3-fpm-alpine
 
 # Install system dependencies, PHP extensions, and AWS RDS SSL certificate bundle
 RUN apk add --no-cache \
@@ -16,6 +16,7 @@ RUN apk add --no-cache \
     mariadb-connector-c \
     oniguruma-dev \
     util-linux \
+    supervisor \
     linux-headers \
     && update-ca-certificates \
     && curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/ssl/certs/global-bundle.pem \
@@ -31,6 +32,14 @@ WORKDIR /var/www/html
 
 # Copy application files
 COPY . .
+
+# Copy PHP-FPM & Supervisor configuration files
+COPY docker/php/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/zz-docker.conf
+COPY docker/php/conf.d/custom.ini /usr/local/etc/php/conf.d/custom.ini
+COPY docker/supervisord.conf /etc/supervisord.conf
+COPY docker/scheduler-daemon.sh /usr/local/bin/scheduler-daemon.sh
+COPY docker/queue-worker-daemon.sh /usr/local/bin/queue-worker-daemon.sh
+RUN chmod +x /usr/local/bin/scheduler-daemon.sh /usr/local/bin/queue-worker-daemon.sh
 
 # Build Arguments for Next.js frontend build (defaults to relative /api/v1)
 ARG NEXT_PUBLIC_API_URL=/api/v1
@@ -56,6 +65,6 @@ RUN mkdir -p storage/framework/cache/data \
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 8000 3000
+EXPOSE 9000 3000
 
 ENTRYPOINT ["docker-entrypoint.sh"]
