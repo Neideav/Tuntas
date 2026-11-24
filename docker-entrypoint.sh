@@ -38,12 +38,25 @@ if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
 fi
 
 # 4. Ensure storage and bootstrap/cache permissions are compliant (chmod 775, no 777)
-mkdir -p storage/framework/cache/data \
+mkdir -p storage/app/public \
+         storage/framework/cache/data \
          storage/framework/sessions \
          storage/framework/views \
          storage/logs \
          bootstrap/cache
-chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+chown -R www-data:www-data storage bootstrap/cache
+chmod -R 775 storage bootstrap/cache
+
+# Permission preflight validation: ensure user www-data has write access to all critical directories
+echo "🔐 Running storage & cache permissions preflight for www-data..."
+for dir in storage storage/app storage/app/public storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache; do
+  if ! su -s /bin/sh www-data -c "touch /var/www/html/$dir/.perm_check && rm -f /var/www/html/$dir/.perm_check" >/dev/null 2>&1; then
+    echo "❌ FATAL ERROR: User 'www-data' does not have write permission to /var/www/html/$dir!" >&2
+    echo "👉 Fix volume ownership on host/mount: chown -R 33:33 (or www-data:www-data) and ensure chmod 775." >&2
+    exit 1
+  fi
+done
+echo "✅ Permissions preflight passed: www-data has write access to all storage and cache paths."
 
 # Clean up any stale heartbeat and lock files from prior crashes
 rm -f /var/www/html/storage/framework/scheduler_heartbeat.txt 2>/dev/null || true

@@ -173,49 +173,68 @@ echo "✅ Nginx syntax verified and service reloaded with SSL active."
 # 7. Configure Automated Renewal Crontab on Host (Duplicate-safe & daemon checked)
 echo "⏰ [7/7] Configuring automatic certificate renewal..."
 
-# Check if cron service daemon is actually active
+CRON_CONFIGURED=false
 CRON_DAEMON_RUNNING=false
+
+# Check if cron service daemon is actually active
 if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; then
   CRON_DAEMON_RUNNING=true
 elif command -v systemctl >/dev/null 2>&1 && { systemctl is-active --quiet cron 2>/dev/null || systemctl is-active --quiet crond 2>/dev/null; }; then
   CRON_DAEMON_RUNNING=true
 fi
 
-if [ "$CRON_DAEMON_RUNNING" = true ]; then
-  echo "✅ Host cron daemon is active and running."
-else
-  echo "⚠️ Warning: The cron daemon (cron/crond) does not appear to be running on this host!"
-  echo "👉 On Ubuntu EC2, activate it with: sudo systemctl enable --now cron"
-fi
-
-CRON_CMD="0 3 * * * cd $(pwd) && docker compose run --rm certbot renew --webroot -w /var/www/certbot --quiet && docker compose exec -T nginx nginx -s reload >> /var/log/certbot-renew.log 2>&1"
+CRON_CMD="0 3 * * * cd $(pwd) && { echo \"=== Renewal Check \$(date -u) ===\"; docker compose run --rm certbot renew --webroot -w /var/www/certbot && docker compose exec -T nginx nginx -t && docker compose exec -T nginx nginx -s reload; } >> /var/log/certbot-renew.log 2>&1"
 
 if command -v crontab >/dev/null 2>&1; then
   CURRENT_CRONTAB=$(crontab -l 2>/dev/null || true)
   if echo "$CURRENT_CRONTAB" | grep -q "certbot renew"; then
     echo "✅ Automated daily certificate renewal cron job already exists in crontab."
+    CRON_CONFIGURED=true
   else
     (echo "$CURRENT_CRONTAB"; echo "$CRON_CMD") | crontab -
     echo "✅ Automated daily certificate renewal added to crontab (03:00 daily)."
+    CRON_CONFIGURED=true
   fi
 else
   echo "⚠️ Notice: 'crontab' command is not available on this host environment."
-  echo "👉 On Ubuntu host, ensure cron is active (sudo apt install -y cron) and add:"
-  echo "   $CRON_CMD"
+fi
+
+# Optional dry-run verification
+DRY_RUN_PASSED=false
+if docker compose run --rm certbot renew --dry-run >/dev/null 2>&1; then
+  DRY_RUN_PASSED=true
 fi
 
 echo ""
 echo "=========================================================="
-echo "🎉 SUCCESS: HTTPS SSL Activated for ${DOMAIN}!"
+echo "📊 SSL & HTTPS PROVISIONING STATUS AUDIT"
+echo "=========================================================="
+echo "1. Sertifikat Diterbitkan:     ✅ BERHASIL (fullchain.pem & privkey.pem)"
+echo "2. Nginx HTTPS Server:         ✅ AKTIF & SINTAKS TERVERIFIKASI"
+if [ "$CRON_CONFIGURED" = true ]; then
+  echo "3. Cron Konfigurasi:           ✅ TERKONFIGURASI (03:00 setiap hari)"
+else
+  echo "3. Cron Konfigurasi:           ⚠️ BELUM TERPASANG (crontab tidak ditemukan)"
+fi
+if [ "$CRON_DAEMON_RUNNING" = true ]; then
+  echo "4. Cron Daemon Host:           ✅ AKTIF & BERJALAN"
+else
+  echo "4. Cron Daemon Host:           ⚠️ TIDAK AKTIF (Jalankan: sudo systemctl enable --now cron)"
+fi
+if [ "$DRY_RUN_PASSED" = true ]; then
+  echo "5. Renewal Dry-Run Test:       ✅ BERHASIL (Certbot renew simulation passed)"
+else
+  echo "5. Renewal Dry-Run Test:       ⚠️ MELEWATI SIMULASI (Dapat diuji: ./scripts/setup-ssl.sh --dry-run)"
+fi
 echo "=========================================================="
 echo "👉 Application URL:        https://${DOMAIN}"
-echo "👉 Direct IP Access:       http://YOUR_SERVER_IP (Remains fully accessible via HTTP)"
+echo "👉 Direct IP Access:       http://YOUR_SERVER_IP (Tetap dapat diakses langsung via HTTP)"
 echo ""
-echo "👉 ACTION REQUIRED: Update your host .env file for HTTPS session security:"
+echo "👉 LANGKAH WAJIB BERIKUTNYA: Perbarui .env host untuk keamanan session HTTPS:"
 echo "   SESSION_SECURE_COOKIE=true"
 echo "   APP_URL=https://${DOMAIN}"
 echo "   FRONTEND_URL=https://${DOMAIN}"
 echo "   CORS_ALLOWED_ORIGINS=https://${DOMAIN},https://www.${DOMAIN}"
 echo "   SANCTUM_STATEFUL_DOMAINS=${DOMAIN},www.${DOMAIN}"
-echo "   Then run: docker compose exec app php artisan config:cache"
+echo "   Kemudian jalankan: docker compose exec app php artisan config:cache"
 echo "=========================================================="

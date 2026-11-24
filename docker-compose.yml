@@ -21,11 +21,11 @@ services:
       - app-storage:/var/www/html/storage
       - app-bootstrap-cache:/var/www/html/bootstrap/cache
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:3000 && pgrep -f 'php-fpm' >/dev/null || exit 1"]
+      test: ["CMD", "/usr/local/bin/container-healthcheck.sh"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 40s
     logging:
       driver: "json-file"
       options:
@@ -56,7 +56,7 @@ services:
       app:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/v1/health | grep -q '\"status\":\"ok\"' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

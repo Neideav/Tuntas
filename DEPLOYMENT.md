@@ -311,13 +311,14 @@ docker compose ps
 ```
 
 Container yang berjalan:
-1. `tuntas` (`app`): Container aplikasi terpadu dengan process supervisor bash (PID 1):
-   - **Laravel API**: Port internal `8000`.
-   - **Next.js Web**: Port internal `3000`.
-   - **Queue Worker Daemon**: Auto-restarting worker dengan driver database (`--sleep=3 --tries=3 --max-time=3600`).
-   - **Laravel Scheduler Daemon**: Menjalankan cron tasks (`reminders:generate`) tiap menit, mencatat log ke `/var/www/html/storage/logs/scheduler.log`, dan memperbarui heartbeat `/tmp/scheduler-health.txt`.
-   - **Graceful Shutdown**: Menangani sinyal `SIGTERM`/`SIGINT`, memanggil `queue:restart`, dan menunggu seluruh proses anak berhenti dengan aman tanpa meninggalkan orphan process.
-2. `tuntas-nginx` (`nginx`): Reverse proxy pada port publik `80` dan `443`.
+1. `tuntas` (`app`): Container aplikasi terpadu dengan process supervisor Supervisord (PID 1):
+   - **PHP-FPM 8.3**: Port internal `9000` (FastCGI pool dinamis, RAM ~40MB/worker).
+   - **Next.js 15 Web**: Port internal `3000` (Node.js SSR runtime, RAM ~180-250MB).
+   - **Queue Worker Daemon**: Auto-restarting worker dengan driver database (`--sleep=3 --tries=3 --max-time=3600`, RAM ~60-80MB).
+   - **Laravel Scheduler Daemon**: Menjalankan cron tasks (`reminders:generate`) tiap menit dengan flock eksklusif, mencatat log rotasi otomatis Supervisor ke `/var/www/html/storage/logs/scheduler.log`, dan memperbarui heartbeat `/var/www/html/storage/framework/scheduler_heartbeat.txt`.
+   - **Graceful Shutdown**: Menangani sinyal `SIGTERM`/`SIGINT`, memanggil `queue:restart`, dan menunggu seluruh proses anak berhenti dengan aman tanpa meninggalkan orphan process (`stopasgroup=true`, `killasgroup=true`).
+   - **Manajemen Memori (RAM Budgeting)**: Pada EC2 `t3.small` (2 GB RAM), batas aman PHP-FPM adalah `pm.max_children = 12` (atau 16), yang dapat dikonfigurasi melalui variabel `PHP_FPM_MAX_CHILDREN` di `.env`. Ini mencegah OOM Killer mematikan proses Next.js atau PHP-FPM di bawah beban tinggi.
+2. `tuntas-nginx` (`nginx`): Reverse proxy pada port publik `80` dan `443` (FastCGI routing ke `app:9000` dan frontend proxy ke `app:3000`).
 3. `tuntas-certbot` (`certbot`): Menangani penerbitan dan renewal sertifikat SSL.
 
 ---

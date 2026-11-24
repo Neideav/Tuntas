@@ -39,7 +39,10 @@ COPY docker/php/conf.d/custom.ini /usr/local/etc/php/conf.d/custom.ini
 COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/scheduler-daemon.sh /usr/local/bin/scheduler-daemon.sh
 COPY docker/queue-worker-daemon.sh /usr/local/bin/queue-worker-daemon.sh
-RUN chmod +x /usr/local/bin/scheduler-daemon.sh /usr/local/bin/queue-worker-daemon.sh
+COPY docker/container-healthcheck.sh /usr/local/bin/container-healthcheck.sh
+RUN chmod +x /usr/local/bin/scheduler-daemon.sh \
+             /usr/local/bin/queue-worker-daemon.sh \
+             /usr/local/bin/container-healthcheck.sh
 
 # Build Arguments for Next.js frontend build (defaults to relative /api/v1)
 ARG NEXT_PUBLIC_API_URL=/api/v1
@@ -54,11 +57,13 @@ RUN pnpm install --frozen-lockfile \
     && pnpm prune --prod
 
 # Prepare storage directories with secure permissions (chmod 775, no 777)
-RUN mkdir -p storage/framework/cache/data \
+RUN mkdir -p storage/app/public \
+    storage/framework/cache/data \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs \
     bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
 # Setup entrypoint script
