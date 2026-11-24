@@ -10,19 +10,20 @@ echo "=== [1/7] Initializing Tuntas Production Environment ==="
 export TZ="${APP_TIMEZONE:-Asia/Jakarta}"
 echo "Timezone configured to: $TZ"
 
-# 2. Ensure APP_KEY is available without attempting to write to read-only .env
+# 2. Ensure persistent APP_KEY is present (strictly no volatile ephemeral keys)
 if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
   # Check if defined inside .env
-  ENV_KEY=$(grep -E '^APP_KEY=base64:.+' /var/www/html/.env 2>/dev/null | cut -d '=' -f2- || true)
+  ENV_KEY=$(grep -E '^APP_KEY=base64:[A-Za-z0-9+/=]{44}' /var/www/html/.env 2>/dev/null | cut -d '=' -f2- || true)
   if [ -n "$ENV_KEY" ]; then
     export APP_KEY="$ENV_KEY"
-    echo "Loaded APP_KEY from .env configuration."
+    echo "Loaded persistent APP_KEY from .env configuration."
   else
-    echo "⚠️ WARNING: APP_KEY is empty in .env and environment."
-    NEW_KEY=$(php artisan key:generate --show --no-interaction)
-    export APP_KEY="$NEW_KEY"
-    echo "🔑 Generated runtime APP_KEY ($APP_KEY) for application bootstrap."
-    echo "👉 ACTION REQUIRED: Add 'APP_KEY=$APP_KEY' to your host .env file to persist sessions across reboots."
+    echo "❌ FATAL ERROR: Persistent APP_KEY is missing in .env and environment!" >&2
+    echo "👉 Laravel requires a persistent APP_KEY to secure sessions, passwords, and tokens across reboots." >&2
+    echo "👉 Generate a permanent key on your host and add it to your .env file:" >&2
+    echo "   php -r 'echo \"base64:\" . base64_encode(random_bytes(32)) . PHP_EOL;'" >&2
+    echo "   Or run: ./deploy.sh which provisions this automatically." >&2
+    exit 1
   fi
 fi
 

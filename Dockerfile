@@ -30,16 +30,17 @@ WORKDIR /var/www/html
 # Copy application files
 COPY . .
 
-# Build Arguments for Next.js frontend build
+# Build Arguments for Next.js frontend build (defaults to relative /api/v1)
 ARG NEXT_PUBLIC_API_URL=/api/v1
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ENV NODE_ENV=production
 
 # Install PHP dependencies without dev packages
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Install Node dependencies with locked manifest & build Next.js frontend
-RUN pnpm install --frozen-lockfile && pnpm run build
+# Install Node dependencies with locked manifest, build Next.js frontend, then prune devDependencies
+RUN pnpm install --frozen-lockfile \
+    && pnpm run build \
+    && pnpm prune --prod
 
 # Prepare storage directories with secure permissions (chmod 775, no 777)
 RUN mkdir -p storage/framework/cache/data \

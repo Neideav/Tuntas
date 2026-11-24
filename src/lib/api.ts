@@ -1,6 +1,21 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+/**
+ * Determine the appropriate API base URL:
+ * - On the client (browser): use NEXT_PUBLIC_API_URL or relative '/api/v1' (resolved by Nginx)
+ * - On the server (SSR in Node.js): use INTERNAL_API_URL or local loopback 'http://127.0.0.1:8000/api/v1'
+ */
+const isServer = typeof window === 'undefined';
+export const getBaseURL = (): string => {
+  if (isServer) {
+    return process.env.INTERNAL_API_URL ||
+           process.env.BACKEND_API_URL?.replace('/api/:path*', '/api/v1') ||
+           'http://127.0.0.1:8000/api/v1';
+  }
+  return process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+};
+
+const baseURL = getBaseURL();
 
 export interface ApiErrorResponse {
   success?: boolean;

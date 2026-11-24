@@ -1,14 +1,14 @@
-# 🚀 PANDUAN DEPLOYMENT PRODUKSI — AKSES LANGSUNG IP & DOMAIN (PORT 80 & 443)
+# 🚀 PANDUAN LENGKAP DEPLOYMENT PRODUKSI TUNTAS — AWS EC2 & AWS RDS MARIADB
 
-Dokumen ini merupakan panduan resmi standar DevOps untuk men-deploy aplikasi **Tuntas** ke lingkungan produksi (VPS Ubuntu 22.04/24.04, AWS EC2, DigitalOcean, dsb.) dengan arsitektur **Nginx Reverse Proxy**.
+Dokumen ini merupakan panduan resmi standar DevOps untuk men-deploy aplikasi **Tuntas** ke lingkungan produksi (AWS EC2 Ubuntu 22.04/24.04 LTS & AWS RDS MariaDB) menggunakan **Docker Compose**, **Nginx Reverse Proxy**, dan **Let's Encrypt SSL**.
 
-Setelah menerapkan panduan ini, aplikasi dapat diakses langsung tanpa perlu menambahkan port `:3000` pada URL browser:
-- **Akses Langsung via IP VPS**: `http://IP-VPS-ANDA`
-- **Akses Langsung via Domain**: `https://DOMAIN-ANDA.com` (atau `https://www.DOMAIN-ANDA.com`)
+Setelah deployment berhasil, aplikasi dapat diakses langsung tanpa menyertakan port `:3000` atau `:8000`:
+- **Akses Langsung via IP Publik EC2**: `http://IP_EC2`
+- **Akses Langsung via Domain / Subdomain**: `https://tuntas.id` atau `https://app.tuntas.id`
 
 ---
 
-## 1. Arsitektur Produksi & Topologi Server
+## Ringkasan Arsitektur Container & Jaringan
 
 ```
                           Internet (Browser Klien)
@@ -42,54 +42,79 @@ Setelah menerapkan panduan ini, aplikasi dapat diakses langsung tanpa perlu mena
                       └─────────────────────────────┘
 ```
 
-### Prinsip Utama Keamanan & Akses:
-1. **Satu-satunya Entry Point**: Container `tuntas-nginx` adalah satu-satunya service yang membuka port publik `80` (HTTP) dan `443` (HTTPS).
-2. **Port Internal Terisolasi**: Port Next.js `3000` dan port Laravel `8000` **TIDAK dipublikasikan ke host**. Port tersebut hanya dapat diakses melalui jaringan internal Docker `tuntas-network`.
-3. **Dukungan Akses IP Langsung**: Jika diakses menggunakan IP VPS (`http://103.xxx.xxx.xxx`), Nginx langsung meneruskan ke frontend Next.js tanpa memaksakan redirect HTTPS (menghindari error SSL sertifikat tidak valid pada IP).
-4. **Dukungan Domain & SSL Otomatis**: Jika diakses menggunakan domain yang telah dikonfigurasi SSL, request HTTP otomatis dialihkan ke HTTPS (`301 Redirect`).
+- **Satu Gateway Publik**: Hanya service `tuntas-nginx` yang mempublikasikan port `80` (HTTP) dan `443` (HTTPS).
+- **Port Terisolasi**: Port Next.js `3000` dan Laravel `8000` hanya terbuka di jaringan bridge internal Docker (`tuntas-network`).
+- **Akses Langsung via IP**: Request ke IP publik EC2 langsung dilayani via HTTP tanpa redirect keliru ke HTTPS.
+- **SSL / HTTPS Otomatis**: Request ke domain dengan SSL aktif otomatis dialihkan dari HTTP (80) ke HTTPS (443) dengan HTTP/2 dan TLS 1.2/1.3.
 
 ---
 
-## 2. Prasyarat Server & Konfigurasi Firewall (UFW)
+## A. Persiapan AWS EC2
 
-### Spesifikasi Minimum:
-- **OS**: Ubuntu 22.04 LTS atau 24.04 LTS (RAM 2 GB+, CPU 1-2 Core).
-- **Storage**: SSD 20 GB+.
+1. **Luncurkan Instance EC2**:
+   - **AMI**: Ubuntu Server 24.04 LTS atau 22.04 LTS (64-bit x86_64).
+   - **Instance Type**: Minimum `t3.small` (2 vCPU, 2 GB RAM) atau direkomendasikan `t3.medium` (2 vCPU, 4 GB RAM) untuk kompilasi Next.js yang cepat.
+   - **Storage (EBS)**: 25–40 GB General Purpose SSD (gp3).
+   - **Key Pair**: Pilih atau buat key pair SSH baru (`.pem`).
 
-### Pengaturan Firewall Host (UFW / Security Group):
-Pastikan port 3000 dan 8000 **DITUTUP** dari akses publik, dan hanya port web standar yang dibuka:
+2. **Hubungkan ke Server EC2 via SSH**:
+   ```bash
+   ssh -i /path/ke/keypair.pem ubuntu@EC2_PUBLIC_IP
+   ```
 
+3. **Update Paket Sistem & Atur Zona Waktu**:
+   ```bash
+   sudo apt update && sudo apt upgrade -y
+   sudo timedatectl set-timezone Asia/Jakarta
+   ```
+
+---
+
+## B. Konfigurasi Security Group
+
+Konfigurasikan AWS Security Group pada AWS Management Console untuk EC2 dan RDS.
+
+### 1. Inbound Rules pada Security Group EC2 (`sg-ec2-tuntas`):
+| Type | Protocol | Port Range | Source | Deskripsi |
+| :--- | :--- | :--- | :--- | :--- |
+| **SSH** | TCP | 22 | `IP_ADMIN_ANDA/32` | Akses terminal aman |
+| **HTTP** | TCP | 80 | `0.0.0.0/0` | Akses web publik & ACME challenge Certbot |
+| **HTTPS** | TCP | 443 | `0.0.0.0/0` | Akses web aman terenkripsi TLS |
+
+> **PERINGATAN KEAMANAN**: Pastikan port `3000`, `8000`, dan `3306` **TIDAK** dibuka pada Inbound Rules EC2!
+
+### 2. Inbound Rules pada Security Group RDS (`sg-rds-tuntas`):
+| Type | Protocol | Port Range | Source | Deskripsi |
+| :--- | :--- | :--- | :--- | :--- |
+| **MySQL/Aurora** | TCP | 3306 | `sg-ec2-tuntas` (Security Group EC2) | Akses database hanya dari EC2 |
+
+### 3. Konfigurasi Firewall Lokal (UFW) di EC2:
 ```bash
-# Buka akses SSH, HTTP, dan HTTPS
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-
-# Pastikan port internal tidak dapat diakses publik
-sudo ufw deny 3000/tcp
-sudo ufw deny 8000/tcp
-sudo ufw deny 3306/tcp
-
-# Aktifkan firewall
-sudo ufw enable
-sudo ufw status
+sudo ufw --force enable
+sudo ufw status verbose
 ```
 
 ---
 
-## 3. Langkah Instalasi Docker & Persiapan Host
+## C. Install Docker & Docker Compose
 
-Jalankan perintah berikut pada instance Ubuntu AWS EC2:
+Jalankan perintah berikut pada host EC2 untuk menginstal Docker Engine resmi:
 
 ```bash
-# 1. Update package repository & install alat bantu
-sudo apt update && sudo apt install -y ca-certificates curl git mariadb-client
+# 1. Pasang dependensi sertifikat dan kunci apt
+sudo apt update && sudo apt install -y ca-certificates curl gnupg
 
-# 2. Setup GPG key dan repository Docker resmi
+# 2. Tambahkan GPG key resmi Docker
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
+# 3. Daftarkan repository resmi Docker
 sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
@@ -99,95 +124,217 @@ Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 
-# 3. Install Docker Engine dan Docker Compose Plugin
+# 4. Install Docker Engine, Buildx, dan Docker Compose Plugin
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo usermod -aG docker $USER
 
-# Relogin session agar grup docker aktif
-exit
+# 5. Berikan izin non-root kepada user ubuntu
+sudo usermod -aG docker ubuntu
+
+# 6. Terapkan grup baru atau logout-login kembali
+newgrp docker
+docker --version
+docker compose version
 ```
 
 ---
 
-## 4. Setup Database AWS RDS MariaDB
+## D. Install MariaDB Client
 
-Pastikan database `tuntas` telah dibuat di instance AWS RDS Anda:
+Pasang `mariadb-client` di host EC2 untuk melakukan pengujian konektivitas, verifikasi SSL, dan inisialisasi skema database ke AWS RDS:
 
 ```bash
-mysql -h YOUR_RDS_ENDPOINT -P 3306 -u admin -p -e "CREATE DATABASE IF NOT EXISTS tuntas CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+sudo apt update && sudo apt install -y mariadb-client
+mariadb --version
 ```
 
 ---
 
-## 5. Clone Repository & Konfigurasi Environment
+## E. Membuat Database AWS RDS
+
+1. **Uji Konektivitas Jaringan ke AWS RDS**:
+   ```bash
+   nc -zv YOUR_RDS_ENDPOINT.rds.amazonaws.com 3306
+   ```
+
+2. **Buat Skema Database `tuntas`**:
+   Hubungi instance RDS dari host EC2:
+   ```bash
+   mariadb -h YOUR_RDS_ENDPOINT.rds.amazonaws.com -P 3306 -u admin -p -e "CREATE DATABASE IF NOT EXISTS tuntas CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+   ```
+
+3. **Verifikasi Database**:
+   ```bash
+   mariadb -h YOUR_RDS_ENDPOINT.rds.amazonaws.com -P 3306 -u admin -p -e "SHOW DATABASES LIKE 'tuntas';"
+   ```
+
+---
+
+## F. Clone Repository
+
+Siapkan direktori aplikasi `/var/www/tuntas` dan unduh kode program:
 
 ```bash
-sudo mkdir -p /var/www
-sudo git clone https://github.com/Neideav/Tuntas.git /var/www/tuntas
+# 1. Buat direktori kerja
+sudo mkdir -p /var/www/tuntas
 sudo chown -R $USER:$USER /var/www/tuntas
+
+# 2. Clone repository Tuntas
+git clone https://github.com/Neideav/Tuntas.git /var/www/tuntas
 cd /var/www/tuntas
 
-# Salin template environment produksi
+# 3. Berikan permission eksekusi pada skrip otomasi
+chmod +x deploy.sh auto-deploy.sh docker-entrypoint.sh scripts/setup-ssl.sh
+```
+
+---
+
+## G. Membuat dan Mengisi `.env`
+
+Salin template `.env.example` ke `.env` produksi:
+
+```bash
 cp .env.example .env
 nano .env
 ```
 
-### Variabel Wajib yang Harus Disesuaikan pada `.env`:
+### Konfigurasi Wajib Produksi:
+```env
+APP_NAME="Tuntas"
+APP_ENV=production
+APP_DEBUG=false
+APP_TIMEZONE=Asia/Jakarta
 
-| Variabel | Contoh Nilai | Keterangan |
-| :--- | :--- | :--- |
-| `APP_NAME` | `"Tuntas"` | Nama resmi platform |
-| `APP_ENV` | `production` | Mengaktifkan optimasi cache |
-| `APP_DEBUG` | `false` | Mencegah kebocoran stack trace error |
-| `APP_KEY` | *(hasil `php artisan key:generate`)* | Kunci enkripsi sesi & data sensitif |
-| `APP_URL` | `http://IP_PUBLIC_EC2` | URL root API / domain server |
-| `FRONTEND_URL` | `http://IP_PUBLIC_EC2:3000` | URL frontend Next.js |
-| `DB_CONNECTION` | `mariadb` | Driver database resmi MariaDB |
-| `DB_HOST` | `your-rds-endpoint.rds.amazonaws.com` | Endpoint host AWS RDS |
-| `DB_PORT` | `3306` | Port standar MariaDB |
-| `DB_DATABASE` | `tuntas` | Nama skema database |
-| `DB_USERNAME` | `admin` | User master database |
-| `DB_PASSWORD` | `YOUR_SECURE_PASSWORD` | Password database |
-| `MYSQL_ATTR_SSL_CA` | `/etc/ssl/certs/global-bundle.pem` | Path bundle CA AWS RDS di container |
-| `DB_SSL_VERIFY_CERT` | `true` | Validasi sertifikat TLS/SSL |
-| `SESSION_DRIVER` | `database` | Sesi tersimpan aman di database |
-| `SESSION_SECURE_COOKIE` | `true` | Cookie hanya dikirim via HTTPS |
-| `TRUSTED_PROXIES` | `"*"` | Proxy AWS ALB / CloudFront |
-| `CORS_ALLOWED_ORIGINS` | `http://IP_PUBLIC:3000,http://localhost:3000` | Asal domain yang diizinkan |
+# URL Publik (Tanpa port :3000 atau :8000)
+# Jika menggunakan IP EC2:
+APP_URL=http://EC2_PUBLIC_IP
+FRONTEND_URL=http://EC2_PUBLIC_IP
+CORS_ALLOWED_ORIGINS=http://EC2_PUBLIC_IP
 
----
+# Jika menggunakan Domain:
+# APP_URL=https://tuntas.id
+# FRONTEND_URL=https://tuntas.id
+# CORS_ALLOWED_ORIGINS=https://tuntas.id,https://www.tuntas.id
 
-## 6. Build & Jalankan Docker Container
+# Next.js Build Variables
+NEXT_PUBLIC_APP_NAME="Tuntas"
+NEXT_PUBLIC_APP_ENV=production
+NEXT_PUBLIC_API_URL=/api/v1
+INTERNAL_API_URL=http://127.0.0.1:8000/api/v1
 
-```bash
-# 1. Build image Docker
-docker compose build
+# Koneksi Database AWS RDS MariaDB
+DB_CONNECTION=mariadb
+DB_HOST=YOUR_RDS_ENDPOINT.rds.amazonaws.com
+DB_PORT=3306
+DB_DATABASE=tuntas
+DB_USERNAME=admin
+DB_PASSWORD=YOUR_STRONG_PASSWORD
 
-# 2. Jalankan container di background
-docker compose up -d
+# AWS RDS SSL Configuration
+MYSQL_ATTR_SSL_CA=/etc/ssl/certs/global-bundle.pem
+DB_SSL_VERIFY_CERT=true
 
-# 3. Periksa status container
-docker compose ps
+# Cache, Session, & Queue Drivers
+CACHE_STORE=database
+SESSION_DRIVER=database
+SESSION_LIFETIME=120
+SESSION_SECURE_COOKIE=false # Ubah ke true jika sudah aktif HTTPS
+SESSION_HTTP_ONLY=true
+SESSION_SAME_SITE=lax
+QUEUE_CONNECTION=database
 
-# 4. Pantau log inisialisasi & migrasi otomatis
-docker compose logs -f app
+# Reverse Proxy Trust
+TRUSTED_PROXIES=*
 ```
 
 ---
 
-## 7. Inisialisasi Database & Cache Optimization
+## H. Menghasilkan `APP_KEY` Secara Permanen
 
-Container `tuntas` secara otomatis menjalankan migrasi saat startup (`docker-entrypoint.sh`). Namun, Anda dapat menjalankan perintah Artisan secara manual:
+Kunci enkripsi `APP_KEY` **harus dibuat satu kali pada file `.env` di host** sebelum container berjalan. Ini memastikan user session dan token enkripsi tidak hangus saat container restart:
 
 ```bash
-# Generate APP_KEY jika belum terisi
-docker compose exec app php artisan key:generate --force
+# Jalankan helper php sekali pakai melalui Docker untuk mengisi APP_KEY di .env host
+docker run --rm -v $(pwd):/app -w /app composer:2 php -r '
+  $key = "base64:" . base64_encode(random_bytes(32));
+  $envFile = ".env";
+  $content = file_get_contents($envFile);
+  if (preg_match("/^APP_KEY=.*$/m", $content)) {
+    $content = preg_replace("/^APP_KEY=.*$/m", "APP_KEY=" . $key, $content);
+  } else {
+    $content .= "\nAPP_KEY=" . $key;
+  }
+  file_put_contents($envFile, $content);
+  echo "Persistent APP_KEY generated: " . $key . PHP_EOL;
+'
+```
 
-# Jalankan database seeder awal (opsional)
-docker compose exec app php artisan db:seed --force
+Atau gunakan skrip otomatis `deploy.sh` yang secara otomatis mendeteksi dan meng-generate `APP_KEY` jika belum ada.
 
-# Validasi status optimasi cache
+---
+
+## I. Build Docker Image
+
+Build image Docker `tuntas` secara terisolasi. Tahap ini akan:
+- Mengunduh AWS RDS global CA bundle ke `/etc/ssl/certs/global-bundle.pem`.
+- Menginstal dependensi PHP via Composer dengan `--no-dev --optimize-autoloader`.
+- Menginstal dependensi Node.js via pnpm (`--frozen-lockfile`), meng-compile Next.js, dan melakukan `pnpm prune --prod`.
+
+```bash
+docker compose build --pull
+```
+
+---
+
+## J. Menjalankan Docker Compose
+
+Luncurkan stack layanan menggunakan skrip deployment terpadu atau Docker Compose:
+
+### Cara 1: Menggunakan Skrip Deployment Resmi (Direkomendasikan)
+```bash
+./deploy.sh
+```
+
+### Cara 2: Menjalankan Manual
+```bash
+# Jalankan container di background
+docker compose up -d
+
+# Periksa status seluruh container
+docker compose ps
+```
+
+Container yang berjalan:
+1. `tuntas` (`app`): Menjalankan Laravel API (port 8000), Next.js Web (port 3000), Queue Worker, dan Cron Runner.
+2. `tuntas-nginx` (`nginx`): Reverse proxy pada port publik `80` dan `443`.
+3. `tuntas-certbot` (`certbot`): Menangani penerbitan dan renewal sertifikat SSL.
+
+---
+
+## K. Menjalankan Database Migration
+
+Pada saat container `app` pertama kali dinyalakan, `docker-entrypoint.sh` secara otomatis:
+1. Memverifikasi koneksi TLS/SSL ke AWS RDS MariaDB.
+2. Mendeteksi apakah tabel `cache_locks` sudah tersedia.
+3. Menjalankan `php artisan migrate --force` (untuk database baru) atau `php artisan migrate --force --isolated` (untuk database yang sudah berjalan).
+
+Jika Anda ingin menjalankan migrasi atau seeder secara manual dari host:
+
+```bash
+# Jalankan migrasi
+docker compose exec app php artisan migrate --force
+
+# Buat akun administrator resmi (tanpa mock seeders)
+docker compose exec app php artisan admin:create --name="Admin Tuntas" --email="admin@tuntas.id" --password="PasswordKuat123!"
+```
+
+---
+
+## L. Menyiapkan Cache & Optimasi Laravel
+
+Docker entrypoint secara otomatis meng-cache konfigurasi, route, dan view saat container boot. Anda dapat menyegarkan cache sewaktu-waktu:
+
+```bash
 docker compose exec app php artisan config:cache
 docker compose exec app php artisan route:cache
 docker compose exec app php artisan view:cache
@@ -195,32 +342,29 @@ docker compose exec app php artisan view:cache
 
 ---
 
-## 8. Strategi Background Queue Worker & Cron Reminders
+## M. Menguji Akses Frontend
 
-Container Tuntas telah dilengkapi dengan *auto-spawn background worker*:
-- **Queue Worker**: Memproses tugas antrean (pengiriman email, kalkulasi analitik, pemrosesan ujian) dengan opsi `--sleep=3 --tries=3 --max-time=3600`.
-- **Scheduled Reminders**: Untuk menjalankan penjadwalan cron reminder Tuntas di host Linux, tambahkan entri crontab di Ubuntu host:
+Buka browser atau gunakan `curl` dari terminal host:
 
 ```bash
-crontab -e
+# Uji HTTP Status Code Frontend
+curl -I http://localhost
+# Atau dari komputer lokal Anda:
+curl -I http://EC2_PUBLIC_IP
 ```
-Tambahkan baris berikut:
-```cron
-* * * * * docker compose -f /var/www/tuntas/docker-compose.yml exec -T app php artisan schedule:run >> /dev/null 2>&1
-```
+**Ekspektasi Output**: `HTTP/1.1 200 OK` dengan header `X-Powered-By: Next.js`.
 
 ---
 
-## 9. Pengujian & Verifikasi Endpoint Produksi
+## N. Menguji Akses Backend & Health Check
 
-Uji kesehatan aplikasi dari terminal host:
+Uji endpoint API melalui reverse proxy port 80:
 
 ```bash
-# Uji API Health check (melalui Next.js reverse proxy di port 80)
 curl -i http://localhost/api/v1/health
 ```
 
-Respon sukses saat database terhubung (HTTP 200 OK):
+**Respon Sukses (HTTP 200 OK)**:
 ```json
 {
   "status": "ok",
@@ -235,179 +379,119 @@ Respon sukses saat database terhubung (HTTP 200 OK):
 }
 ```
 
-Jika database terputus atau mengalami gangguan (HTTP 503 Service Unavailable):
-```json
-{
-  "status": "degraded",
-  "health": "degraded",
-  "system": "Tuntas API",
-  "version": "2.0.0",
-  "environment": "production",
-  "timestamp": "2026-11-24T12:00:00Z",
-  "services": {
-    "database": "disconnected"
-  }
-}
-```
-
 ---
 
-## 10. Konfigurasi Domain & Otomasi SSL (Let's Encrypt / Certbot)
+## O. Mengaktifkan HTTPS (Let's Encrypt SSL)
 
-Aplikasi Tuntas telah dilengkapi dengan skrip otomatisasi SSL satu perintah (`scripts/setup-ssl.sh`) yang terintegrasi dengan service `tuntas-nginx` dan `tuntas-certbot` di Docker Compose.
+Jika Anda memiliki domain (misal: `tuntas.id`):
 
-### Langkah 1: Pastikan DNS Domain Mengarah ke IP VPS
-Buat DNS A Record pada domain registrar atau Cloudflare:
-- `tuntas.id` -> `IP_VPS_ANDA`
-- `www.tuntas.id` -> `IP_VPS_ANDA`
+1. **Arahkan DNS**:
+   - `A Record`: `tuntas.id` -> `EC2_PUBLIC_IP`
+   - `A Record`: `www.tuntas.id` -> `EC2_PUBLIC_IP`
 
-### Langkah 2: Jalankan Skrip Otomasi SSL
-Cukup jalankan satu perintah berikut di root project:
+2. **Jalankan Skrip Otomasi SSL**:
+   ```bash
+   ./scripts/setup-ssl.sh tuntas.id admin@tuntas.id
+   ```
 
-```bash
-# Berikan izin eksekusi jika belum
-chmod +x scripts/setup-ssl.sh
-
-# Jalankan aktivasi SSL
-./scripts/setup-ssl.sh tuntas.id admin@tuntas.id
-```
-
-### Apa yang Dilakukan Skrip `setup-ssl.sh` Secara Otomatis:
-1. Memverifikasi container `tuntas-nginx` berjalan dan siap menerima ACME webroot challenge pada `/.well-known/acme-challenge/`.
-2. Menjalankan Certbot via Docker Compose untuk menerbitkan sertifikat resmi Let's Encrypt.
-3. Meng-generate file konfigurasi `docker/nginx/conf.d/ssl.conf` dari template resmi.
-4. Menjalankan `nginx -t` dan me-reload Nginx tanpa downtime.
-5. Menjadwalkan cron job otomatis di VPS untuk memperpanjang (*renew*) sertifikat setiap hari pukul 03:00 dini hari.
-
-### Hasil Setelah SSL Aktif:
-- `http://tuntas.id` -> Otomatis dialihkan ke `https://tuntas.id` (HTTP 301).
-- `https://tuntas.id` -> Berjalan penuh dengan enkripsi TLS 1.2/1.3, HTTP/2, dan security headers.
-- `http://IP_VPS_ANDA` -> **Tetap dapat diakses via HTTP langsung** tanpa error mismatch SSL.
-```bash
-sudo ln -s /etc/nginx/sites-available/tuntas /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d app.tuntas.id
-```
-
-### Opsi B: AWS Application Load Balancer (ALB) + ACM (Amazon Certificate Manager)
-
-Jika menggunakan topologi enterprise AWS:
-1. Buat **Target Group**: Target type `Instance` atau `IP`, Protocol `HTTP`, Port `80`.
-2. Set Health Check path ke `/api/v1/health` dengan matcher `200`.
-3. Buat **ALB Listener**:
-   - Port `80` (HTTP) -> Redirect ke `443` (HTTPS).
-   - Port `443` (HTTPS) -> Forward ke Target Group Tuntas dengan sertifikat ACM.
-4. Pastikan di `.env` file Tuntas:
+3. **Perbarui `.env` untuk HTTPS**:
    ```env
-   TRUSTED_PROXIES=*
+   APP_URL=https://tuntas.id
+   FRONTEND_URL=https://tuntas.id
+   CORS_ALLOWED_ORIGINS=https://tuntas.id,https://www.tuntas.id
    SESSION_SECURE_COOKIE=true
+   ```
+
+4. **Reload Cache Aplikasi**:
+   ```bash
+   docker compose exec app php artisan config:cache
+   ```
+
+5. **Verifikasi Renewal Otomatis**:
+   Sertifikat akan di-renew secara otomatis oleh Certbot. Anda dapat mengujinya dengan simulasi dry-run:
+   ```bash
+   docker compose run --rm certbot renew --dry-run
    ```
 
 ---
 
-## 11. Monitoring, Health Check & Logging
-
-### Health Check Docker
-Container `tuntas` memiliki internal healthcheck terkonfigurasi di `docker-compose.yml`:
-```bash
-docker inspect --format='{{json .State.Health}}' tuntas | jq
-```
-Status akan bernilai `"Status": "healthy"` jika endpoint `/api/v1/health` mengembalikan status 200.
-
-### Logging Terkelola
-Docker Compose membatasi ukuran log agar disk EBS EC2 tidak penuh:
-- Driver: `json-file`
-- Max size: `10m`
-- Max file: `3` (rotasi maksimal 30 MB)
-
-Melihat log live:
-```bash
-# Log seluruh aplikasi (Next.js & Laravel)
-docker compose logs -f app
-
-# Log Laravel internal
-docker compose exec app tail -n 100 /var/www/html/storage/logs/laravel.log
-```
-
----
-
-## 12. Panduan Troubleshooting Masalah Produksi
+## P. Panduan Troubleshooting Masalah Produksi
 
 ### 1. Database Connection Timeout / Refused
 - **Gejala**: `Failed to connect to database at ... after 30 attempts. Aborting startup.`
-- **Penyebab**: Security group RDS tidak mengizinkan inbound dari IP privat EC2, atau credential salah.
+- **Penyebab**: Security group RDS tidak mengizinkan port 3306 dari Security Group EC2, atau credential database salah.
 - **Solusi**:
-  1. Periksa Security Group AWS RDS: pastikan inbound port 3306 mengizinkan Security Group ID dari instance EC2 (`sg-xxxxxx`).
-  2. Tes koneksi dari host EC2: `nc -zv YOUR_RDS_ENDPOINT 3306`.
-  3. Periksa file `.env`: pastikan `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, dan `DB_PASSWORD` sesuai.
+  1. Periksa inbound rule Security Group RDS: pastikan type `MySQL/Aurora` port 3306 mengizinkan source `sg-ec2-tuntas`.
+  2. Tes koneksi dari host EC2: `mariadb -h YOUR_RDS_ENDPOINT -u admin -p`.
+  3. Periksa file `.env` dan pastikan variabel `DB_*` sudah tepat.
 
-### 2. AWS RDS SSL Certificate Verification Failure
+### 2. RDS SSL Certificate Verification Failure
 - **Gejala**: `SQLSTATE[HY000] [2002] ... SSL certificate validation failed`.
-- **Penyebab**: File bundle sertifikat CA tidak ditemukan atau corrupt.
+- **Penyebab**: File sertifikat CA tidak ditemukan atau salah konfigurasi.
 - **Solusi**:
-  1. File `global-bundle.pem` telah di-download otomatis saat build Docker ke `/etc/ssl/certs/global-bundle.pem`.
-  2. Pastikan di `.env`:
+  1. Image Docker Tuntas telah memuat Amazon Root CA bundle di `/etc/ssl/certs/global-bundle.pem`.
+  2. Pastikan file `.env` memuat:
      ```env
      MYSQL_ATTR_SSL_CA=/etc/ssl/certs/global-bundle.pem
      DB_SSL_VERIFY_CERT=true
      ```
 
-### 3. Migrasi Terkunci (`Isolated migration lock busy`)
-- **Gejala**: Migrasi tidak berjalan atau log menampilkan peringatan lock.
-- **Penyebab**: Container sebelumnya mati mendadak saat menjalankan migrasi dan atomic cache lock belum kedaluwarsa.
+### 3. Migration Lock Terhambat (`Isolated migration lock`)
+- **Gejala**: Log startup menampilkan peringatan lock migrasi sedang berjalan.
+- **Penyebab**: Container dimatikan mendadak saat migrasi sedang aktif.
 - **Solusi**:
-  1. Hapus cache lock migrasi:
-     ```bash
-     docker compose exec app php artisan cache:forget "illuminate:migrations"
-     ```
-  2. Jalankan migrasi manual:
-     ```bash
-     docker compose exec app php artisan migrate --force
-     ```
-
-### 4. Permission Denied pada Storage / Cache
-- **Gejala**: `The stream or file ".../storage/logs/laravel.log" could not be opened: Failed to open stream: Permission denied`.
-- **Solusi**:
-  Jalankan perbaikan permission pada volume storage:
   ```bash
-  docker compose exec -u root app chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
+  docker compose exec app php artisan cache:forget "illuminate:migrations"
+  docker compose exec app php artisan migrate --force
   ```
+
+### 4. Permission Denied pada Folder Storage / Logs
+- **Gejala**: `The stream or file ".../storage/logs/laravel.log" could not be opened: Permission denied`.
+- **Solusi**:
+  Pastikan folder storage dimiliki oleh `www-data` dengan permission `775`:
+  ```bash
+  docker compose exec -u root app chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+  docker compose exec -u root app chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+  ```
+
+### 5. Memeriksa Log Aplikasi Secara Real-Time
+```bash
+# Log seluruh stack
+docker compose logs -f
+
+# Log Laravel saja
+docker compose exec app tail -n 100 /var/www/html/storage/logs/laravel.log
+
+# Log Nginx reverse proxy
+docker compose logs -f nginx
+```
 
 ---
 
-## 13. Prosedur Rollback Aman (Safe Rollback Procedure)
+## Q. Prosedur Rollback Aman (Safe Rollback)
 
-Jika rilis versi baru mengalami bug kritis di produksi, lakukan rollback dengan prosedur berikut:
+Jika rilis versi baru mengalami kendala pada produksi:
 
-### Langkah 1: Identifikasi Versi Stabil Sebelumnya
-Periksa commit hash stabil terakhir di repository:
-```bash
-git log --oneline -n 5
-```
+1. **Revert Kode ke Commit Sebelumnya**:
+   ```bash
+   git log --oneline -n 5
+   git checkout <COMMIT_HASH_SEBELUMNYA>
+   ```
 
-### Langkah 2: Revert Kode ke Commit Stabil
-```bash
-# Checkout ke commit stabil sebelumnya
-git checkout <COMMIT_HASH_SEBELUMNYA>
-```
+2. **Rollback Database (Jika Diperlukan)**:
+   ```bash
+   docker compose exec app php artisan migrate:rollback --step=1 --force
+   ```
 
-### Langkah 3: Rollback Database (Jika Ada Perubahan Skema)
-Jika commit yang dibatalkan memiliki migrasi baru yang perlu dibatalkan:
-```bash
-docker compose exec app php artisan migrate:rollback --step=1 --force
-```
+3. **Rebuild & Jalankan Ulang Container**:
+   ```bash
+   docker compose down
+   docker compose build --no-cache
+   docker compose up -d
+   ```
 
-### Langkah 4: Rebuild & Restart Container
-```bash
-# Rebuild image Docker dengan kode versi stabil
-docker compose build --no-cache
-
-# Restart container
-docker compose down
-docker compose up -d
-
-# Verifikasi status dan health check
-docker compose ps
-curl -i http://localhost/api/v1/health
-```
-Aplikasi akan kembali berjalan pada versi stabil sebelumnya dalam hitungan detik tanpa meninggalkan data corrupt.
+4. **Verifikasi Health Check**:
+   ```bash
+   docker compose ps
+   curl -i http://localhost/api/v1/health
+   ```
