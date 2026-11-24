@@ -8,7 +8,7 @@ use Tests\TestCase;
 class ExampleTest extends TestCase
 {
     /**
-     * Test that root route redirects guests to todos (which redirects to login).
+     * Test that root route redirects web requests to the frontend application.
      */
     public function test_root_route_redirects(): void
     {

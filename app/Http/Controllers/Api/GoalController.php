@@ -8,6 +8,7 @@ use App\Models\Goal;
 use App\Models\GoalMilestone;
 use App\Services\GoalService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class GoalController extends Controller
@@ -85,32 +86,36 @@ class GoalController extends Controller
             'key_results.*.weight' => 'nullable|numeric|min:0.1|max:10',
         ]);
 
-        $goal = Goal::create([
-            'user_id' => $userId,
-            'title' => $validated['title'],
-            'type' => $validated['type'] ?? 'standard',
-            'description' => $validated['description'] ?? null,
-            'category_id' => $validated['category_id'] ?? null,
-            'confidence_level' => $validated['confidence_level'] ?? 'medium',
-            'start_date' => $validated['start_date'],
-            'target_date' => $validated['target_date'],
-            'status' => $validated['status'] ?? 'not_started',
-            'progress' => 0,
-            'is_archived' => false,
-        ]);
+        $goal = DB::transaction(function () use ($userId, $validated) {
+            $goal = Goal::create([
+                'user_id' => $userId,
+                'title' => $validated['title'],
+                'type' => $validated['type'] ?? 'standard',
+                'description' => $validated['description'] ?? null,
+                'category_id' => $validated['category_id'] ?? null,
+                'confidence_level' => $validated['confidence_level'] ?? 'medium',
+                'start_date' => $validated['start_date'],
+                'target_date' => $validated['target_date'],
+                'status' => $validated['status'] ?? 'not_started',
+                'progress' => 0,
+                'is_archived' => false,
+            ]);
 
-        if (!empty($validated['key_results'])) {
-            foreach ($validated['key_results'] as $index => $kr) {
-                $this->goalService->addMilestone($goal, [
-                    'title' => $kr['title'],
-                    'target_value' => $kr['target_value'],
-                    'current_value' => $kr['current_value'] ?? 0,
-                    'unit' => $kr['unit'] ?? '%',
-                    'weight' => $kr['weight'] ?? 1.0,
-                    'order' => $index,
-                ]);
+            if (!empty($validated['key_results'])) {
+                foreach ($validated['key_results'] as $index => $kr) {
+                    $this->goalService->addMilestone($goal, [
+                        'title' => $kr['title'],
+                        'target_value' => $kr['target_value'],
+                        'current_value' => $kr['current_value'] ?? 0,
+                        'unit' => $kr['unit'] ?? '%',
+                        'weight' => $kr['weight'] ?? 1.0,
+                        'order' => $index,
+                    ]);
+                }
             }
-        }
+
+            return $goal;
+        });
 
         return response()->json([
             'success' => true,

@@ -35,6 +35,7 @@ class AuthController extends Controller
             'timezone' => 'UTC',
         ]);
 
+        $user->email_verified_at = now();
         // Role assigned explicitly, bukan via mass-assignment, untuk mencegah privilege escalation
         $user->role = 'student';
         $user->save();
@@ -73,9 +74,15 @@ class AuthController extends Controller
 
         $user = User::where('email', $credentials['email'])->first();
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+        if (! $user) {
             throw ValidationException::withMessages([
-                'email' => ['Email atau kata sandi tidak valid.'],
+                'email' => ['Email belum terdaftar. Silakan buat akun terlebih dahulu.'],
+            ]);
+        }
+
+        if (! Hash::check($credentials['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'password' => ['Kata sandi yang Anda masukkan salah. Silakan coba lagi.'],
             ]);
         }
 
@@ -176,18 +183,12 @@ class AuthController extends Controller
     public function forgotPassword(Request $request)
     {
         $validated = $request->validate([
-            'email' => 'required|email',
+            'email' => 'required|email|exists:users,email',
+        ], [
+            'email.exists' => 'Email belum terdaftar di sistem kami.',
         ]);
 
         $user = User::where('email', $validated['email'])->first();
-
-        if (! $user) {
-            // Return success generik agar email terdaftar tidak bisa dienumerasi
-            return response()->json([
-                'success' => true,
-                'message' => 'Jika email terdaftar, tautan pemulihan kata sandi telah dikirim.',
-            ]);
-        }
 
         // Generate cryptographically secure token
         $plainToken = Str::random(64);
@@ -215,6 +216,9 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Jika email terdaftar, tautan pemulihan kata sandi telah dikirim.',
+            'data' => [
+                'reset_token' => $plainToken,
+            ],
         ]);
     }
 

@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
+const baseURL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 export interface ApiErrorResponse {
   success?: boolean;
@@ -72,7 +72,15 @@ export const api: AxiosInstance = axios.create({
 });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  if (typeof window !== 'undefined') {
+  const url = config.url || '';
+  const isPublicAuthEndpoint =
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/reset-password') ||
+    url.includes('/health');
+
+  if (typeof window !== 'undefined' && !isPublicAuthEndpoint) {
     const token = localStorage.getItem('tuntas_token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;

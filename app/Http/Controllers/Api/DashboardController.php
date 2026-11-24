@@ -125,8 +125,7 @@ class DashboardController extends Controller
             : 0;
 
         // 5. Learning & Study Sessions
-        $studySessions = LearningSession::where('user_id', $userId)->get();
-        $totalStudyMinutes = (int) $studySessions->sum('duration_minutes');
+        $totalStudyMinutes = (int) LearningSession::where('user_id', $userId)->sum('duration_minutes');
         $totalStudyHours = round($totalStudyMinutes / 60, 1);
 
         $activeCourses = Course::where('user_id', $userId)

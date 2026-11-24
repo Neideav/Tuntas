@@ -62,9 +62,7 @@ Route::prefix('v1')->group(function () {
             ]);
         });
 
-        // Routes berikut memerlukan email terverifikasi
-        Route::middleware('verified')->group(function () {
-
+        // Routes berikut memerlukan autentikasi
         // Dashboard Metrics
         Route::get('/dashboard', [DashboardController::class, 'index']);
 
@@ -182,7 +180,5 @@ Route::prefix('v1')->group(function () {
         Route::get('exam-grading', [ExamAssessmentController::class, 'gradingIndex']);
         Route::get('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingShow']);
         Route::post('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingStore']);
-
-        }); // end middleware('verified')
     }); // end middleware(['auth:sanctum', 'throttle:60,1'])
 });

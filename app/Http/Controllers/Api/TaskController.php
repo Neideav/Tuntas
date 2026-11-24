@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Subtask;
 use App\Models\Tag;
 use App\Models\Task;
+use App\Http\Requests\Task\StoreTaskRequest;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -103,42 +104,9 @@ class TaskController extends Controller
     /**
      * Store a newly created task.
      */
-    public function store(Request $request)
+    public function store(StoreTaskRequest $request)
     {
-        $userId = $request->user()->id;
-
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'status' => 'nullable|in:todo,in_progress,in_review,completed,cancelled',
-            'priority' => 'nullable|in:low,medium,high,urgent',
-            'project_id' => [
-                'nullable',
-                Rule::exists('projects', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
-            ],
-            'category_id' => [
-                'nullable',
-                Rule::exists('categories', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
-            ],
-            'goal_id' => [
-                'nullable',
-                Rule::exists('goals', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
-            ],
-            'start_date' => 'nullable|date',
-            'due_date' => 'nullable|date|after_or_equal:start_date',
-            'reminder_at' => 'nullable|date',
-            'is_recurring' => 'nullable|boolean',
-            'recurrence_pattern' => 'nullable|in:daily,weekly,monthly',
-            'subtasks' => 'nullable|array',
-            'subtasks.*.title' => 'required|string|max:255',
-            'tags' => 'nullable|array',
-            'tags.*' => 'string|max:50',
-            'dependencies' => 'nullable|array',
-            'dependencies.*' => [
-                'integer',
-                Rule::exists('tasks', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
-            ],
-        ]);
+        $validated = $request->validated();
 
         $task = DB::transaction(function () use ($request, $validated) {
             $task = Task::create([

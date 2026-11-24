@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Project\StoreProjectRequest;
 use App\Models\AuditLog;
 use App\Models\Project;
 use App\Models\ProjectMilestone;
@@ -86,30 +87,10 @@ class ProjectController extends Controller
     /**
      * Create a new project.
      */
-    public function store(Request $request)
+    public function store(StoreProjectRequest $request)
     {
         $userId = $request->user()->id;
-
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'category_id' => [
-                'nullable',
-                Rule::exists('categories', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
-            ],
-            'goal_id' => [
-                'nullable',
-                Rule::exists('goals', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
-            ],
-            'status' => 'nullable|in:planning,in_progress,completed,on_hold',
-            'priority' => 'nullable|in:low,medium,high,urgent',
-            'health' => 'nullable|in:on_track,at_risk,off_track',
-            'start_date' => 'nullable|date',
-            'deadline' => 'nullable|date|after_or_equal:start_date',
-            'milestones' => 'nullable|array',
-            'milestones.*.title' => 'required|string|max:255',
-            'milestones.*.due_date' => 'nullable|date',
-        ]);
+        $validated = $request->validated();
 
         $project = DB::transaction(function () use ($userId, $validated) {
             $project = Project::create([

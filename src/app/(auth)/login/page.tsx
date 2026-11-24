@@ -78,8 +78,8 @@ export default function LoginPage() {
     setTimeout(() => setInteractionState('idle'), 800);
   };
 
-  const handleFillCustomer = () => {
-    setEmail('customer@pasaria.id');
+  const handleFillStudent = () => {
+    setEmail('student@tuntas.app');
     setPassword('Password123!');
     setInteractionState('emailFocus');
     setTimeout(() => setInteractionState('idle'), 800);
@@ -201,11 +201,11 @@ export default function LoginPage() {
           <div className="flex items-center justify-center gap-3 pt-1">
             <button
               type="button"
-              onClick={handleFillCustomer}
+              onClick={handleFillStudent}
               className="py-1 px-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-semibold transition cursor-pointer flex items-center gap-1.5"
             >
               <Sparkles className="h-3 w-3 text-indigo-500" />
-              <span>customer@pasaria.id</span>
+              <span>student@tuntas.app</span>
             </button>
             <button
               type="button"

@@ -234,20 +234,23 @@ class LearningController extends Controller
         ]);
 
         $maxOrder = $module->lessons()->max('order') ?? 0;
-        $lesson = $module->lessons()->create([
-            'title' => $validated['title'],
-            'content' => $validated['content'] ?? null,
-            'resource_url' => $validated['resource_url'] ?? null,
-            'video_url' => $validated['video_url'] ?? null,
-            'attachment_url' => $validated['attachment_url'] ?? null,
-            'lesson_type' => $validated['lesson_type'] ?? 'text',
-            'notes' => $validated['notes'] ?? null,
-            'duration_minutes' => $validated['duration_minutes'] ?? 15,
-            'order' => $validated['order'] ?? ($maxOrder + 1),
-            'is_completed' => false,
-        ]);
+        $lesson = DB::transaction(function () use ($module, $validated, $maxOrder) {
+            $lesson = $module->lessons()->create([
+                'title' => $validated['title'],
+                'content' => $validated['content'] ?? null,
+                'resource_url' => $validated['resource_url'] ?? null,
+                'video_url' => $validated['video_url'] ?? null,
+                'attachment_url' => $validated['attachment_url'] ?? null,
+                'lesson_type' => $validated['lesson_type'] ?? 'text',
+                'notes' => $validated['notes'] ?? null,
+                'duration_minutes' => $validated['duration_minutes'] ?? 15,
+                'order' => $validated['order'] ?? ($maxOrder + 1),
+                'is_completed' => false,
+            ]);
 
-        $module->course->recalculateProgress();
+            $module->course->recalculateProgress();
+            return $lesson;
+        });
 
         return response()->json([
             'success' => true,
