@@ -39,26 +39,33 @@ PHP_CHECK=$(php -r "
     exit(2);
   }
 
-  // 3b. Verify Scheduler Heartbeat (150s window)
-  \$schedFile = storage_path('framework/scheduler_heartbeat.txt');
-  if (!file_exists(\$schedFile)) {
-    echo 'SCHEDULER_INACTIVE: Heartbeat file not yet created.';
-    exit(3);
+  // 3b. Verify Scheduler Heartbeat (150s window, allow 90s cold start grace period)
+  \$uptime = 999;
+  if (file_exists('/proc/uptime')) {
+    \$uptime = (float) explode(' ', file_get_contents('/proc/uptime'))[0];
   }
-  if ((time() - filemtime(\$schedFile)) > 150) {
-    echo 'SCHEDULER_STALE: Last heartbeat was > 150 seconds ago.';
+
+  \$schedFile = storage_path('framework/scheduler_heartbeat.txt');
+  if (file_exists(\$schedFile)) {
+    if ((time() - filemtime(\$schedFile)) > 150) {
+      echo 'SCHEDULER_STALE: Last heartbeat was > 150 seconds ago.';
+      exit(3);
+    }
+  } elseif (\$uptime > 90) {
+    echo 'SCHEDULER_INACTIVE: Heartbeat file not yet created after 90s uptime.';
     exit(3);
   }
 
-  // 3c. Verify Queue Worker Heartbeat (60s window if queue driver != sync)
+  // 3c. Verify Queue Worker Heartbeat (60s window if queue driver != sync, allow 60s cold start)
   if (config('queue.default') !== 'sync') {
     \$qFile = storage_path('framework/queue_worker_heartbeat.txt');
-    if (!file_exists(\$qFile)) {
-      echo 'QUEUE_INACTIVE: Heartbeat file not yet created.';
-      exit(4);
-    }
-    if ((time() - filemtime(\$qFile)) > 60) {
-      echo 'QUEUE_STALE: Last heartbeat was > 60 seconds ago.';
+    if (file_exists(\$qFile)) {
+      if ((time() - filemtime(\$qFile)) > 60) {
+        echo 'QUEUE_STALE: Last heartbeat was > 60 seconds ago.';
+        exit(4);
+      }
+    } elseif (\$uptime > 60) {
+      echo 'QUEUE_INACTIVE: Heartbeat file not yet created after 60s uptime.';
       exit(4);
     }
   }

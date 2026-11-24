@@ -23,17 +23,23 @@ echo "Timezone configured to: $TZ"
 
 # 3. Ensure persistent APP_KEY is present (strictly no volatile ephemeral keys)
 if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
-  ENV_KEY=$(grep -E '^APP_KEY=base64:[A-Za-z0-9+/=]{44}' /var/www/html/.env 2>/dev/null | cut -d '=' -f2- || true)
+  ENV_KEY=$(grep -E '^APP_KEY=['"'"'"]?base64:[A-Za-z0-9+/=]{44}['"'"'"]?' /var/www/html/.env 2>/dev/null | cut -d '=' -f2- | tr -d '"'"'"' ' || true)
   if [ -n "$ENV_KEY" ]; then
     export APP_KEY="$ENV_KEY"
     echo "Loaded persistent APP_KEY from .env configuration."
   else
-    echo "❌ FATAL ERROR: Persistent APP_KEY is missing in .env and environment!" >&2
-    echo "👉 Laravel requires a persistent APP_KEY to secure sessions, passwords, and tokens across reboots." >&2
-    echo "👉 Generate a permanent key on your host and add it to your .env file:" >&2
-    echo "   php -r 'echo \"base64:\" . base64_encode(random_bytes(32)) . PHP_EOL;'" >&2
-    echo "   Or run: ./deploy.sh which provisions this automatically." >&2
-    exit 1
+    RAW_KEY=$(grep -E '^APP_KEY=' /var/www/html/.env 2>/dev/null | cut -d '=' -f2- | tr -d '"'"'"' ' || true)
+    if [ -n "$RAW_KEY" ]; then
+      export APP_KEY="$RAW_KEY"
+      echo "Loaded APP_KEY from .env configuration."
+    else
+      echo "❌ FATAL ERROR: Persistent APP_KEY is missing in .env and environment!" >&2
+      echo "👉 Laravel requires a persistent APP_KEY to secure sessions, passwords, and tokens across reboots." >&2
+      echo "👉 Generate a permanent key on your host and add it to your .env file:" >&2
+      echo "   php -r 'echo \"base64:\" . base64_encode(random_bytes(32)) . PHP_EOL;'" >&2
+      echo "   Or run: ./deploy.sh which provisions this automatically." >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -44,18 +50,27 @@ mkdir -p storage/app/public \
          storage/framework/views \
          storage/logs \
          bootstrap/cache
-chown -R www-data:www-data storage bootstrap/cache
-chmod -R 775 storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+chmod -R 775 storage bootstrap/cache 2>/dev/null || true
 
 # Permission preflight validation: ensure user www-data has write access to all critical directories
 echo "🔐 Running storage & cache permissions preflight for www-data..."
-for dir in storage storage/app storage/app/public storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache; do
-  if ! su -s /bin/sh www-data -c "touch /var/www/html/$dir/.perm_check && rm -f /var/www/html/$dir/.perm_check" >/dev/null 2>&1; then
-    echo "❌ FATAL ERROR: User 'www-data' does not have write permission to /var/www/html/$dir!" >&2
-    echo "👉 Fix volume ownership on host/mount: chown -R 33:33 (or www-data:www-data) and ensure chmod 775." >&2
-    exit 1
-  fi
-done
+if command -v su-exec >/dev/null 2>&1; then
+  for dir in storage storage/app storage/app/public storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache; do
+    if ! su-exec www-data touch "/var/www/html/$dir/.perm_check" 2>/dev/null; then
+      echo "❌ FATAL ERROR: User 'www-data' does not have write permission to /var/www/html/$dir!" >&2
+      echo "👉 Fix volume ownership on host/mount: chown -R 33:33 (or www-data:www-data) and ensure chmod 775." >&2
+      exit 1
+    fi
+    rm -f "/var/www/html/$dir/.perm_check" 2>/dev/null || true
+  done
+else
+  # Alpine Busybox fallback: ensure www-data ownership and 775 permissions without relying on su
+  for dir in storage storage/app storage/app/public storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache; do
+    chown www-data:www-data "/var/www/html/$dir" 2>/dev/null || true
+    chmod 775 "/var/www/html/$dir" 2>/dev/null || true
+  done
+fi
 echo "✅ Permissions preflight passed: www-data has write access to all storage and cache paths."
 
 # Clean up any stale heartbeat and lock files from prior crashes

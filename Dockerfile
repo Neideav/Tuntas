@@ -18,6 +18,7 @@ RUN apk add --no-cache \
     util-linux \
     supervisor \
     linux-headers \
+    su-exec \
     && update-ca-certificates \
     && curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/ssl/certs/global-bundle.pem \
     && chmod 644 /etc/ssl/certs/global-bundle.pem
