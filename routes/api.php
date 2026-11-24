@@ -37,7 +37,25 @@ Route::prefix('v1')->group(function () {
             $dbConnected = false;
         }
 
-        $isHealthy = $dbConnected;
+        // Verify scheduler heartbeat
+        $heartbeatFile = storage_path('framework/scheduler_heartbeat.txt');
+        $schedulerActive = false;
+        $lastHeartbeat = null;
+
+        if (file_exists($heartbeatFile)) {
+            $mtime = filemtime($heartbeatFile);
+            $lastHeartbeat = date('c', $mtime);
+            // Considered active if heartbeat file was modified within 180 seconds (3 minutes)
+            if ((time() - $mtime) <= 180) {
+                $schedulerActive = true;
+            }
+        }
+
+        // In production, both database and scheduler must be operational.
+        // In local/testing environments, DB connectivity determines base health.
+        $isHealthy = config('app.env') === 'production'
+            ? ($dbConnected && $schedulerActive)
+            : $dbConnected;
 
         return response()->json([
             'status' => $isHealthy ? 'ok' : 'degraded',
@@ -48,6 +66,11 @@ Route::prefix('v1')->group(function () {
             'timestamp' => now()->toIso8601String(),
             'services' => [
                 'database' => $dbConnected ? 'connected' : 'disconnected',
+                'scheduler' => $schedulerActive ? 'active' : 'inactive',
+            ],
+            'scheduler' => [
+                'status' => $schedulerActive ? 'active' : 'inactive',
+                'last_heartbeat' => $lastHeartbeat,
             ],
         ], $isHealthy ? 200 : 503);
     });

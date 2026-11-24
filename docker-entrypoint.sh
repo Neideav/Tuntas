@@ -138,9 +138,9 @@ cleanup() {
   echo ""
   echo "⚠️ Caught termination signal (SIGTERM/SIGINT). Initiating graceful shutdown..."
 
-  # 1. Gracefully stop Queue Worker
+  # 1. Gracefully stop Queue Worker (allows current active job to finish)
   if [ -n "$QUEUE_PID" ] && kill -0 "$QUEUE_PID" 2>/dev/null; then
-    echo "Stopping Queue Worker (PID: $QUEUE_PID)..."
+    echo "Signaling Queue Worker to stop gracefully (PID: $QUEUE_PID)..."
     php artisan queue:restart 2>/dev/null || true
     kill -TERM "$QUEUE_PID" 2>/dev/null || true
   fi
@@ -163,10 +163,34 @@ cleanup() {
     kill -TERM "$BACKEND_PID" 2>/dev/null || true
   fi
 
-  # 5. Wait for child processes to exit cleanly
-  echo "Waiting for child processes to finish..."
-  wait 2>/dev/null || true
-  rm -f /tmp/scheduler-health.txt 2>/dev/null || true
+  # 5. Wait for child processes with a 15-second shutdown timeout
+  echo "Waiting up to 15s for all processes to finish cleanly..."
+  SHUTDOWN_TIMEOUT=15
+  WAITED=0
+  while [ $WAITED -lt $SHUTDOWN_TIMEOUT ]; do
+    ALIVE=0
+    for PID in $QUEUE_PID $SCHEDULER_PID $NEXT_PID $BACKEND_PID; do
+      if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        ALIVE=1
+        break
+      fi
+    done
+    if [ $ALIVE -eq 0 ]; then
+      break
+    fi
+    sleep 1
+    WAITED=$((WAITED + 1))
+  done
+
+  # Force-kill any lingering stubborn processes after timeout to prevent orphan zombies
+  for PID in $QUEUE_PID $SCHEDULER_PID $NEXT_PID $BACKEND_PID; do
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+      echo "Force killing lingering process (PID: $PID)..."
+      kill -9 "$PID" 2>/dev/null || true
+    fi
+  done
+
+  rm -f /var/www/html/storage/framework/scheduler_heartbeat.txt 2>/dev/null || true
   echo "✅ All services stopped gracefully. Exiting container."
   exit 0
 }
@@ -190,14 +214,26 @@ if [ "$QUEUE_CONNECTION" != "sync" ] && [ -n "$QUEUE_CONNECTION" ]; then
   echo "Queue Worker started (PID: $QUEUE_PID)."
 fi
 
-# 8. Start Background Laravel Scheduler Daemon (Auto-restarting with logging & health heartbeat)
+# 8. Start Background Laravel Scheduler Daemon (with exclusive lock & heartbeat)
 echo "=== [6/7] Starting Production Laravel Scheduler Daemon ==="
 touch /var/www/html/storage/logs/scheduler.log
+SCHEDULER_LOCK="/var/www/html/storage/framework/scheduler.lock"
+
+# Write initial heartbeat so health check is immediately valid at boot
+date -u +"%Y-%m-%dT%H:%M:%SZ" > /var/www/html/storage/framework/scheduler_heartbeat.txt
+
 (
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Scheduler daemon initialized." >> /var/www/html/storage/logs/scheduler.log
+  exec 200>"$SCHEDULER_LOCK"
+  if ! flock -n 200; then
+    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Another scheduler daemon instance holds the lock. Skipping duplicate runner." >> /var/www/html/storage/logs/scheduler.log
+    exit 0
+  fi
+
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Scheduler daemon initialized with exclusive lock (PID: $$)." >> /var/www/html/storage/logs/scheduler.log
+
   while [ "$TERMINATING" = "0" ]; do
     php artisan schedule:run --no-interaction --verbose >> /var/www/html/storage/logs/scheduler.log 2>&1 || true
-    date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/scheduler-health.txt
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > /var/www/html/storage/framework/scheduler_heartbeat.txt
     sleep 60
   done
 ) &

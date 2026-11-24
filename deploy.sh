@@ -114,7 +114,18 @@ HEALTH_HTTP_CODE=$(curl -s -o /tmp/health_response.json -w "%{http_code}" http:/
 if [ "$HEALTH_HTTP_CODE" != "200" ]; then
   echo "❌ FATAL: API healthcheck returned HTTP $HEALTH_HTTP_CODE (expected 200)!" >&2
   cat /tmp/health_response.json 2>/dev/null || true
-  echo ""
+  echo "" >&2
+  echo "=== Application Container Logs ===" >&2
+  docker compose logs --tail=50 app >&2
+  exit 1
+fi
+
+if grep -q '"status":"degraded"' /tmp/health_response.json 2>/dev/null; then
+  echo "❌ FATAL: API health status is DEGRADED! Core service disconnected or inactive." >&2
+  cat /tmp/health_response.json >&2
+  echo "" >&2
+  echo "=== Application Container Logs ===" >&2
+  docker compose logs --tail=50 app >&2
   exit 1
 fi
 

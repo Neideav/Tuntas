@@ -386,7 +386,12 @@ curl -i http://localhost/api/v1/health
   "environment": "production",
   "timestamp": "2026-11-24T12:00:00Z",
   "services": {
-    "database": "connected"
+    "database": "connected",
+    "scheduler": "active"
+  },
+  "scheduler": {
+    "status": "active",
+    "last_heartbeat": "2026-11-24T12:00:00Z"
   }
 }
 ```

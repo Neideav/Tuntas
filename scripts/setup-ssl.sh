@@ -48,25 +48,33 @@ else
   echo "⚠️ Warning: Could not resolve IP for ${DOMAIN} locally. Ensure your DNS A record points to this server's public IP!"
 fi
 
-# 3. Validate ACME HTTP-01 Challenge Endpoint via Nginx
-echo "📡 [3/6] Validating ACME Webroot challenge path through Nginx..."
+# 3. Create challenge directory & Validate ACME HTTP-01 Challenge Endpoint via Nginx
+echo "📡 [3/6] Setting up & validating ACME Webroot challenge path through Nginx..."
 TEST_TOKEN="tuntas-acme-validation-$(date +%s)"
-# Write a temporary test token into the shared webroot volume
+
+# Ensure ACME challenge directory exists inside webroot before writing check file
+docker compose exec -T nginx mkdir -p /var/www/certbot/.well-known/acme-challenge || {
+  echo "❌ FATAL: Failed to create /var/www/certbot/.well-known/acme-challenge directory!" >&2
+  exit 1
+}
+
+# Write test token file into webroot
 docker compose exec -T nginx sh -c "echo '${TEST_TOKEN}' > /var/www/certbot/.well-known/acme-challenge/test-check.txt" || {
   echo "❌ FATAL: Cannot write challenge token to /var/www/certbot/.well-known/acme-challenge/" >&2
   exit 1
 }
 
-# Verify web server responds to the challenge path
+# Verify web server responds to the challenge path over HTTP
 CHALLENGE_RESPONSE=$(curl -s -f "http://127.0.0.1/.well-known/acme-challenge/test-check.txt" || true)
 docker compose exec -T nginx rm -f /var/www/certbot/.well-known/acme-challenge/test-check.txt
 
 if [ "$CHALLENGE_RESPONSE" != "$TEST_TOKEN" ]; then
-  echo "❌ FATAL: ACME challenge path validation failed! Nginx did not serve challenge token." >&2
-  echo "👉 Ensure port 80 is not blocked and Nginx reverse proxy configuration is active." >&2
+  echo "❌ FATAL: ACME HTTP-01 challenge path validation failed!" >&2
+  echo "   Nginx did not return the expected challenge verification token." >&2
+  echo "👉 Ensure port 80 is not blocked by firewall (UFW/AWS Security Group) and Nginx reverse proxy is running." >&2
   exit 1
 fi
-echo "✅ ACME HTTP-01 challenge path is accessible."
+echo "✅ ACME HTTP-01 challenge path verified successfully through Nginx."
 
 # 4. Request Certificate from Let's Encrypt via Certbot Webroot (without aggressive --force-renewal)
 echo "📜 [4/6] Requesting SSL certificate from Let's Encrypt..."
@@ -98,12 +106,12 @@ else
 fi
 
 if [ "$CERT_SUCCESS" != true ]; then
-  echo "❌ FATAL: Certbot failed to obtain an SSL certificate from Let's Encrypt." >&2
+  echo "❌ FATAL: Certbot failed to obtain an SSL certificate from Let's Encrypt!" >&2
   exit 1
 fi
 
-# 5. Validate Certificate Files Existence before modifying Nginx
-echo "🔎 [5/6] Validating generated certificate files..."
+# 5. Validate Certificate Files Existence before activating HTTPS in Nginx
+echo "🔎 [5/6] Validating generated certificate and private key files..."
 if ! docker compose run --rm certbot test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"; then
   echo "❌ FATAL: /etc/letsencrypt/live/${DOMAIN}/fullchain.pem not found!" >&2
   exit 1
@@ -112,7 +120,7 @@ if ! docker compose run --rm certbot test -f "/etc/letsencrypt/live/${DOMAIN}/pr
   echo "❌ FATAL: /etc/letsencrypt/live/${DOMAIN}/privkey.pem not found!" >&2
   exit 1
 fi
-echo "✅ Certificate files verified."
+echo "✅ Certificate and private key files verified."
 
 # 6. Generate Nginx SSL Configuration & Reload
 echo "⚙️ [6/6] Generating Nginx SSL configuration and testing syntax..."
@@ -131,7 +139,7 @@ fi
 
 sed "s/{{DOMAIN}}/${DOMAIN}/g" "$TEMPLATE_FILE" > "$TARGET_FILE"
 
-# Test Nginx syntax inside the container
+# Test Nginx syntax inside the container before reloading
 if ! docker compose exec nginx nginx -t; then
   echo "❌ FATAL: Nginx syntax test failed after generating SSL config! Reverting changes..." >&2
   if [ -f "${TARGET_FILE}.bak" ]; then
@@ -145,12 +153,18 @@ fi
 
 rm -f "${TARGET_FILE}.bak" 2>/dev/null || true
 docker compose exec nginx nginx -s reload
-echo "✅ Nginx reloaded successfully with SSL active."
+echo "✅ Nginx syntax verified and service reloaded with SSL active."
 
-# 7. Configure Automated Renewal Crontab on Host
+# 7. Configure Automated Renewal Crontab on Host (Duplicate-safe)
 CRON_CMD="0 3 * * * cd $(pwd) && docker compose run --rm certbot renew --webroot -w /var/www/certbot --quiet && docker compose exec -T nginx nginx -s reload >> /var/log/certbot-renew.log 2>&1"
-(crontab -l 2>/dev/null | grep -F "certbot renew" || (crontab -l 2>/dev/null; echo "$CRON_CMD")) | crontab -
-echo "✅ Automated daily certificate renewal configured in crontab (03:00 daily)."
+CURRENT_CRONTAB=$(crontab -l 2>/dev/null || true)
+
+if echo "$CURRENT_CRONTAB" | grep -q "certbot renew"; then
+  echo "✅ Automated daily certificate renewal cron job already exists in crontab."
+else
+  (echo "$CURRENT_CRONTAB"; echo "$CRON_CMD") | crontab -
+  echo "✅ Automated daily certificate renewal added to crontab (03:00 daily)."
+fi
 
 echo ""
 echo "=========================================================="

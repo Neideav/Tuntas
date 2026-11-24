@@ -10,6 +10,18 @@ Artisan::command('inspire', function () {
 
 /**
  * Automated reminder scheduling for deadlines, exams, and habits.
- * In production, trigger via crontab: * * * * * cd /path-to-tuntas && php artisan schedule:run >> /dev/null 2>&1
  */
 Schedule::command('reminders:generate')->hourly()->withoutOverlapping();
+
+/**
+ * Scheduler Heartbeat Monitor:
+ * Records timestamp every minute into storage/framework/scheduler_heartbeat.txt
+ * so that /api/v1/health can verify the scheduler is continuously processing tasks.
+ */
+Schedule::call(function () {
+    $heartbeatDir = storage_path('framework');
+    if (!is_dir($heartbeatDir)) {
+        @mkdir($heartbeatDir, 0775, true);
+    }
+    @file_put_contents($heartbeatDir . '/scheduler_heartbeat.txt', now()->toIso8601String());
+})->everyMinute()->name('scheduler-heartbeat');

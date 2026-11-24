@@ -13,13 +13,13 @@ class CreateAdminUserCommand extends Command
 {
     /**
      * The name and signature of the console command.
+     * CLI password option is strictly omitted to prevent credential leaks in shell history and process tables.
      *
      * @var string
      */
     protected $signature = 'admin:create 
                             {--email= : The email address for the administrator}
                             {--name= : The full name of the administrator}
-                            {--password= : The secure password (min 8 chars)}
                             {--role=admin : The user role (admin or instructor)}';
 
     /**
@@ -27,7 +27,7 @@ class CreateAdminUserCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Provision or update an administrator account safely in production without demo seeders';
+    protected $description = 'Provision or update an administrator account safely in production with hidden password input';
 
     /**
      * Execute the console command.
@@ -36,20 +36,16 @@ class CreateAdminUserCommand extends Command
     {
         $email = $this->option('email') ?: $this->ask('Enter Administrator Email');
         $name = $this->option('name') ?: $this->ask('Enter Administrator Name', 'Administrator');
-        
-        $password = $this->option('password');
-        if ($password) {
-            $this->warn('⚠️ Security Notice: Supplying passwords via command-line options may expose credentials in shell history and process inspection (ps). In production, prefer interactive prompt without --password.');
-        } else {
-            $password = $this->secret('Enter Administrator Password (hidden, min 8 chars)');
-            $confirm = $this->secret('Confirm Administrator Password');
-            if ($password !== $confirm) {
-                $this->error('❌ Passwords do not match.');
-                return 1;
-            }
-        }
-
         $role = $this->option('role') ?: 'admin';
+
+        // Hidden password prompt and confirmation
+        $password = $this->secret('Enter Administrator Password (hidden, min 8 chars)');
+        $confirm = $this->secret('Confirm Administrator Password');
+
+        if ($password !== $confirm) {
+            $this->error('❌ Passwords do not match.');
+            return 1;
+        }
 
         // Validate Inputs
         $validator = Validator::make([
@@ -74,8 +70,9 @@ class CreateAdminUserCommand extends Command
         $user = User::where('email', $email)->first();
 
         if ($user) {
-            if (!$this->confirm("User with email [{$email}] already exists. Update role to [{$role}] and reset password?", true)) {
-                $this->info('Operation cancelled.');
+            // Require explicit confirmation to modify existing account
+            if (!$this->confirm("User with email [{$email}] already exists. Update role to [{$role}] and reset password?", false)) {
+                $this->info('Operation cancelled. Existing account was left unchanged.');
                 return 0;
             }
 
@@ -84,6 +81,33 @@ class CreateAdminUserCommand extends Command
                 'password' => Hash::make($password),
                 'role' => $role,
                 'email_verified_at' => now(),
+            ]);
+
+            UserSetting::firstOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'theme' => 'dark',
+                    'email_notifications' => true,
+                    'in_app_notifications' => true,
+                    'daily_digest' => true,
+                    'timezone' => $user->timezone ?? 'Asia/Jakarta',
+                    'preferences' => [],
+                ]
+            );
+
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'user.admin_updated',
+                'auditable_type' => User::class,
+                'auditable_id' => (string) $user->id,
+                'payload' => [
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'action_type' => 'password_reset_and_role_update',
+                ],
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Artisan CLI',
+                'created_at' => now(),
             ]);
 
             $this->info("✅ Administrator account [{$email}] updated successfully.");
@@ -101,27 +125,32 @@ class CreateAdminUserCommand extends Command
                 ['user_id' => $user->id],
                 [
                     'theme' => 'dark',
-                    'language' => 'id',
-                    'notifications_enabled' => true,
+                    'email_notifications' => true,
+                    'in_app_notifications' => true,
+                    'daily_digest' => true,
+                    'timezone' => 'Asia/Jakarta',
+                    'preferences' => [],
                 ]
             );
 
+            // Write audit log entry
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'user.admin_provisioned',
+                'auditable_type' => User::class,
+                'auditable_id' => (string) $user->id,
+                'payload' => [
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'provisioned_via' => 'cli',
+                ],
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Artisan CLI',
+                'created_at' => now(),
+            ]);
+
             $this->info("✅ Administrator account [{$email}] created successfully with role [{$role}].");
         }
-
-        // Write audit log entry
-        AuditLog::create([
-            'user_id' => $user->id,
-            'action' => 'user.admin_provisioned',
-            'auditable_type' => User::class,
-            'auditable_id' => (string) $user->id,
-            'payload' => [
-                'email' => $user->email,
-                'role' => $user->role,
-                'provisioned_via' => 'cli',
-            ],
-            'created_at' => now(),
-        ]);
 
         return 0;
     }
