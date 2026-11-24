@@ -276,7 +276,7 @@ npm run build
 
 ## 🐳 Docker Production Infrastructure & Architecture
 
-Tuntas is engineered to run in production as a **Single-Container Cohesive Monorepo**:
+Tuntas is engineered to run in production with a dedicated **Nginx Reverse Proxy & Cohesive Monorepo** architecture:
 
 ```
                        Internet (Browser Clients)
@@ -287,30 +287,26 @@ Tuntas is engineered to run in production as a **Single-Container Cohesive Monor
                    └──────────────┬──────────────┘
                                   │
                    ┌──────────────▼──────────────┐
-                   │    Docker Container: tuntas │
-                   │  ┌───────────────────────┐  │
-                   │  │   Next.js 15 Frontend │  │
-                   │  │   (Internal Port 3000)│  │
-                   │  └───────────┬───────────┘  │
-                   │              │ /api/*        │ Internal Loopback Rewrite
-                   │              ▼               │ (Private 127.0.0.1)
-                   │  ┌───────────────────────┐  │
-                   │  │   Laravel 12 API      │  │
-                   │  │   (Internal Port 8000)│  │
-                   │  └───────────┬───────────┘  │
-                   └──────────────┼──────────────┘
-                                  │ TLS 1.3 / SSL CA (global-bundle.pem)
-                                  ▼
-                   ┌─────────────────────────────┐
-                   │   AWS RDS MariaDB 10.11+    │
-                   │   (Private VPC / Port 3306) │
-                   └─────────────────────────────┘
+                   │    Container: tuntas-nginx  │
+                   │    (Nginx Alpine Gateway)   │
+                   └──────┬───────────────┬──────┘
+                          │               │
+         location /       │               │ location /api/
+                          ▼               ▼
+                   ┌──────────────┐┌──────────────┐
+                   │ Next.js Web  ││ Laravel API  │
+                   │ Port 3000    ││ Port 8000    │
+                   │ (Internal)   ││ (Internal)   │
+                   └──────────────┘└──────────────┘
+                    (Bridge Network: tuntas-network)
+                    (Ports 3000 & 8000 NEVER exposed to host)
 ```
 
-- **Frontend**: Next.js 15 on internal port `3000`.
-- **Backend API**: Laravel 12 on internal loopback `127.0.0.1:8000` (port 8000 is **not** exposed to the host/internet).
-- **Reverse Proxy**: Next.js automatically rewrites `/api/:path*` to `http://127.0.0.1:8000/api/:path*`, eliminating CORS friction and preventing backend exposure.
-- **Health Check**: Container probes `/api/v1/health` verifying database PDO connectivity every 30s.
+- **Single Public Gateway**: Nginx on ports `80` and `443` handles all incoming client requests.
+- **Direct IP Access**: Browsing `http://IP-VPS` works immediately out of the box without specifying `:3000` or `:8000`.
+- **Domain & SSL**: Running `./scripts/setup-ssl.sh <domain> <email>` automatically provisions Let's Encrypt certificates, activates HTTP->HTTPS redirects for the domain, and sets up automated daily renewal cron jobs.
+- **Zero Port Exposure**: Ports `3000` and `8000` remain strictly internal within the Docker bridge network.
+- **Health Check**: Probes `/api/v1/health` verifying database PDO connectivity every 30s.
 - **Entrypoint Lifecycle**:
   1. Database connection retry loop (up to 30 attempts, 2s interval).
   2. Isolated atomic schema migrations (`php artisan migrate --force --isolated`).

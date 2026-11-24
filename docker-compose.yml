@@ -1,4 +1,8 @@
 services:
+  # ----------------------------------------------------------------------------
+  # 1. Tuntas Core Application (Next.js 15 Frontend + Laravel 12 Backend)
+  # Internal Only: Ports 3000 and 8000 are NOT published to the public host
+  # ----------------------------------------------------------------------------
   app:
     build:
       context: .
@@ -7,8 +11,9 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
     container_name: tuntas
     restart: unless-stopped
-    ports:
-      - "${PORT:-80}:3000"
+    expose:
+      - "3000"
+      - "8000"
     env_file:
       - .env
     volumes:
@@ -29,6 +34,53 @@ services:
     networks:
       - tuntas-network
 
+  # ----------------------------------------------------------------------------
+  # 2. Nginx Reverse Proxy (Public Entrypoint: Port 80 HTTP & Port 443 HTTPS)
+  # Routes direct VPS IP and Domain requests without exposing internal ports
+  # ----------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: tuntas-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - tuntas-network
+
+  # ----------------------------------------------------------------------------
+  # 3. Certbot (Automated Let's Encrypt SSL Provisioning & Auto-Renewal)
+  # ----------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot
+    container_name: tuntas-certbot
+    restart: "no"
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    networks:
+      - tuntas-network
+
 networks:
   tuntas-network:
     driver: bridge
@@ -36,3 +88,6 @@ networks:
 volumes:
   app-storage:
   app-bootstrap-cache:
+  certbot-etc:
+  certbot-var:
+  certbot-webroot:

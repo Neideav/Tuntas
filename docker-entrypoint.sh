@@ -54,9 +54,9 @@ if [ "$QUEUE_CONNECTION" != "sync" ] && [ -n "$QUEUE_CONNECTION" ]; then
   QUEUE_PID=$!
 fi
 
-# 5. Start Laravel backend API on internal loopback 127.0.0.1:8000
+# 5. Start Laravel backend API on internal port 8000
 echo "Starting Laravel API on internal port 8000..."
-php artisan serve --host=127.0.0.1 --port=8000 &
+php artisan serve --host=0.0.0.0 --port=8000 &
 BACKEND_PID=$!
 
 # 6. Trap termination signals to gracefully shut down background services

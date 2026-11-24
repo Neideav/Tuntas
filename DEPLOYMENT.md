@@ -1,31 +1,79 @@
-# 🚀 PANDUAN DEPLOYMENT PRODUKSI & DOKUMENTASI DOCKER TUNTAS
+# 🚀 PANDUAN DEPLOYMENT PRODUKSI — AKSES LANGSUNG IP & DOMAIN (PORT 80 & 443)
 
-Dokumen ini merupakan panduan resmi standar DevOps untuk men-deploy aplikasi **Tuntas** ke lingkungan produksi (AWS EC2, AWS ECS, atau server mandiri Ubuntu Linux) dengan database **AWS RDS MariaDB / MySQL**.
+Dokumen ini merupakan panduan resmi standar DevOps untuk men-deploy aplikasi **Tuntas** ke lingkungan produksi (VPS Ubuntu 22.04/24.04, AWS EC2, DigitalOcean, dsb.) dengan arsitektur **Nginx Reverse Proxy**.
+
+Setelah menerapkan panduan ini, aplikasi dapat diakses langsung tanpa perlu menambahkan port `:3000` pada URL browser:
+- **Akses Langsung via IP VPS**: `http://IP-VPS-ANDA`
+- **Akses Langsung via Domain**: `https://DOMAIN-ANDA.com` (atau `https://www.DOMAIN-ANDA.com`)
 
 ---
 
 ## 1. Arsitektur Produksi & Topologi Server
 
-Aplikasi Tuntas dibangun dengan arsitektur **Monorepo Cohesive**:
-- **Frontend**: Next.js 15 (React 19, TypeScript) berjalan di port `3000`.
-- **Backend API**: Headless Laravel 12 (PHP 8.3 CLI / Octane / Server) berjalan di port `8000`.
-- **Reverse Proxy**: Next.js me-rewrite rute `/api/:path*` langsung ke `http://127.0.0.1:8000/api/:path*`, sehingga browser klien hanya perlu berkomunikasi ke port 80/443 tanpa kendala CORS beda origin.
-- **Database**: AWS RDS MariaDB 10.11 / 11.4 dengan enkripsi transport TLS/SSL (`global-bundle.pem`).
-- **Container**: Satu unit container Docker monorepo terisolasi (`tuntas`) mengekspos port 80 dan 3000.
+```
+                          Internet (Browser Klien)
+                                     │
+                                     ▼
+                      ┌─────────────────────────────┐
+                      │    Port Publik: 80 & 443    │
+                      └──────────────┬──────────────┘
+                                     │
+                      ┌──────────────▼──────────────┐
+                      │   Service: tuntas-nginx     │
+                      │   (Reverse Proxy & SSL)     │
+                      └──────┬───────────────┬──────┘
+                             │               │
+            Routing Frontend │               │ Routing Backend
+            location /       │               │ location /api/
+                             ▼               ▼
+                      ┌──────────────┐┌──────────────┐
+                      │ Next.js Web  ││ Laravel API  │
+                      │ Port: 3000   ││ Port: 8000   │
+                      │ (Internal)   ││ (Internal)   │
+                      └──────────────┘└──────────────┘
+                       ▲              ▲
+                       └──────┬───────┘
+                              │ Bridge Network: tuntas-network
+                              │ (Port 3000 & 8000 TIDAK diekspos ke publik)
+                              ▼
+                      ┌─────────────────────────────┐
+                      │ AWS RDS / MariaDB Database  │
+                      │ (TLS/SSL: global-bundle.pem)│
+                      └─────────────────────────────┘
+```
+
+### Prinsip Utama Keamanan & Akses:
+1. **Satu-satunya Entry Point**: Container `tuntas-nginx` adalah satu-satunya service yang membuka port publik `80` (HTTP) dan `443` (HTTPS).
+2. **Port Internal Terisolasi**: Port Next.js `3000` dan port Laravel `8000` **TIDAK dipublikasikan ke host**. Port tersebut hanya dapat diakses melalui jaringan internal Docker `tuntas-network`.
+3. **Dukungan Akses IP Langsung**: Jika diakses menggunakan IP VPS (`http://103.xxx.xxx.xxx`), Nginx langsung meneruskan ke frontend Next.js tanpa memaksakan redirect HTTPS (menghindari error SSL sertifikat tidak valid pada IP).
+4. **Dukungan Domain & SSL Otomatis**: Jika diakses menggunakan domain yang telah dikonfigurasi SSL, request HTTP otomatis dialihkan ke HTTPS (`301 Redirect`).
 
 ---
 
-## 2. Prasyarat Server AWS EC2
+## 2. Prasyarat Server & Konfigurasi Firewall (UFW)
 
-- **OS**: Ubuntu 22.04 LTS atau 24.04 LTS (Instance Type: `t3.small` / `t3.medium`).
-- **Storage**: EBS 20 GB+ (gp3).
-- **Security Group Inbound**:
-  - Port `22` (SSH) — batasi ke IP administrator.
-  - Port `80` (HTTP) — buka untuk public (0.0.0.0/0).
-  - Port `443` (HTTPS) — buka untuk public (0.0.0.0/0).
-  - Port `3000` (Next.js opsional jika diakses langsung).
-- **Security Group Outbound**:
-  - Port `3306` — arahkan ke Security Group AWS RDS MariaDB.
+### Spesifikasi Minimum:
+- **OS**: Ubuntu 22.04 LTS atau 24.04 LTS (RAM 2 GB+, CPU 1-2 Core).
+- **Storage**: SSD 20 GB+.
+
+### Pengaturan Firewall Host (UFW / Security Group):
+Pastikan port 3000 dan 8000 **DITUTUP** dari akses publik, dan hanya port web standar yang dibuka:
+
+```bash
+# Buka akses SSH, HTTP, dan HTTPS
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# Pastikan port internal tidak dapat diakses publik
+sudo ufw deny 3000/tcp
+sudo ufw deny 8000/tcp
+sudo ufw deny 3306/tcp
+
+# Aktifkan firewall
+sudo ufw enable
+sudo ufw status
+```
 
 ---
 
@@ -204,41 +252,37 @@ Jika database terputus atau mengalami gangguan (HTTP 503 Service Unavailable):
 
 ---
 
-## 10. Konfigurasi HTTPS & SSL Termination
+## 10. Konfigurasi Domain & Otomasi SSL (Let's Encrypt / Certbot)
 
-Untuk produksi publik, sangat direkomendasikan mengaktifkan enkripsi HTTPS menggunakan **Nginx Host Reverse Proxy + Certbot (Let's Encrypt)** atau **AWS Application Load Balancer (ALB)**.
+Aplikasi Tuntas telah dilengkapi dengan skrip otomatisasi SSL satu perintah (`scripts/setup-ssl.sh`) yang terintegrasi dengan service `tuntas-nginx` dan `tuntas-certbot` di Docker Compose.
 
-### Opsi A: Nginx Reverse Proxy di Host EC2 + Let's Encrypt (Certbot)
+### Langkah 1: Pastikan DNS Domain Mengarah ke IP VPS
+Buat DNS A Record pada domain registrar atau Cloudflare:
+- `tuntas.id` -> `IP_VPS_ANDA`
+- `www.tuntas.id` -> `IP_VPS_ANDA`
 
-Jika instance EC2 langsung menerima traffic publik:
+### Langkah 2: Jalankan Skrip Otomasi SSL
+Cukup jalankan satu perintah berikut di root project:
 
-1. Install Nginx dan Certbot di host Ubuntu:
 ```bash
-sudo apt update
-sudo apt install -y nginx certbot python3-certbot-nginx
+# Berikan izin eksekusi jika belum
+chmod +x scripts/setup-ssl.sh
+
+# Jalankan aktivasi SSL
+./scripts/setup-ssl.sh tuntas.id admin@tuntas.id
 ```
 
-2. Konfigurasikan virtual host Nginx (`/etc/nginx/sites-available/tuntas`):
-```nginx
-server {
-    server_name app.tuntas.id; # Ganti dengan domain Anda
+### Apa yang Dilakukan Skrip `setup-ssl.sh` Secara Otomatis:
+1. Memverifikasi container `tuntas-nginx` berjalan dan siap menerima ACME webroot challenge pada `/.well-known/acme-challenge/`.
+2. Menjalankan Certbot via Docker Compose untuk menerbitkan sertifikat resmi Let's Encrypt.
+3. Meng-generate file konfigurasi `docker/nginx/conf.d/ssl.conf` dari template resmi.
+4. Menjalankan `nginx -t` dan me-reload Nginx tanpa downtime.
+5. Menjadwalkan cron job otomatis di VPS untuk memperpanjang (*renew*) sertifikat setiap hari pukul 03:00 dini hari.
 
-    location / {
-        proxy_pass http://127.0.0.1:80; # Meneruskan ke container Docker Tuntas
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 90;
-    }
-}
-```
-
-3. Aktifkan konfigurasi dan generate sertifikat SSL otomatis:
+### Hasil Setelah SSL Aktif:
+- `http://tuntas.id` -> Otomatis dialihkan ke `https://tuntas.id` (HTTP 301).
+- `https://tuntas.id` -> Berjalan penuh dengan enkripsi TLS 1.2/1.3, HTTP/2, dan security headers.
+- `http://IP_VPS_ANDA` -> **Tetap dapat diakses via HTTP langsung** tanpa error mismatch SSL.
 ```bash
 sudo ln -s /etc/nginx/sites-available/tuntas /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
