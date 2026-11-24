@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Laravel-12.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white" alt="Laravel 12" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS v4" />
-  <img src="https://img.shields.io/badge/Tests-79%20Passed%20(702%20Assertions)-emerald?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-97%20Passed%20(847%20Assertions)-emerald?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests" />
 </p>
 
 **Tuntas** is an enterprise-grade, integrated productivity management, continuous learning, and assessment platform designed to harmonize daily execution, project milestone delivery, habit discipline, deep-focus study, and formal examination into a unified digital workspace.
@@ -271,6 +271,87 @@ npm run build
 - `GET /notifications/preferences` | `PUT /notifications/preferences`
 - `POST /notifications/check-reminders` — On-demand idempotent scan.
 - `GET /calendar/events?start={iso}&end={iso}` — Unified cross-module schedule.
+
+---
+
+## 🐳 Docker Production Infrastructure & Architecture
+
+Tuntas is engineered to run in production as a **Single-Container Cohesive Monorepo**:
+
+```
+                       Internet (Browser Clients)
+                                  │
+                                  ▼
+                   ┌─────────────────────────────┐
+                   │   Public Port 80 / 443      │
+                   └──────────────┬──────────────┘
+                                  │
+                   ┌──────────────▼──────────────┐
+                   │    Docker Container: tuntas │
+                   │  ┌───────────────────────┐  │
+                   │  │   Next.js 15 Frontend │  │
+                   │  │   (Internal Port 3000)│  │
+                   │  └───────────┬───────────┘  │
+                   │              │ /api/*        │ Internal Loopback Rewrite
+                   │              ▼               │ (Private 127.0.0.1)
+                   │  ┌───────────────────────┐  │
+                   │  │   Laravel 12 API      │  │
+                   │  │   (Internal Port 8000)│  │
+                   │  └───────────┬───────────┘  │
+                   └──────────────┼──────────────┘
+                                  │ TLS 1.3 / SSL CA (global-bundle.pem)
+                                  ▼
+                   ┌─────────────────────────────┐
+                   │   AWS RDS MariaDB 10.11+    │
+                   │   (Private VPC / Port 3306) │
+                   └─────────────────────────────┘
+```
+
+- **Frontend**: Next.js 15 on internal port `3000`.
+- **Backend API**: Laravel 12 on internal loopback `127.0.0.1:8000` (port 8000 is **not** exposed to the host/internet).
+- **Reverse Proxy**: Next.js automatically rewrites `/api/:path*` to `http://127.0.0.1:8000/api/:path*`, eliminating CORS friction and preventing backend exposure.
+- **Health Check**: Container probes `/api/v1/health` verifying database PDO connectivity every 30s.
+- **Entrypoint Lifecycle**:
+  1. Database connection retry loop (up to 30 attempts, 2s interval).
+  2. Isolated atomic schema migrations (`php artisan migrate --force --isolated`).
+  3. Production route and configuration cache warmup.
+  4. Background queue worker auto-spawn.
+  5. Graceful shutdown trap on `SIGTERM`/`SIGINT`.
+
+For step-by-step server provisioning and AWS configuration, refer to [DEPLOYMENT.md](DEPLOYMENT.md).
+
+---
+
+## 💾 Backup, Disaster Recovery & High Availability
+
+### 1. AWS RDS Automated Backups & PITR
+- **Automated Snapshots**: Enable AWS RDS automated daily backups with a retention period of 7–35 days.
+- **Point-in-Time Recovery (PITR)**: AWS RDS enables restoring the database to any specific second within the retention window.
+
+### 2. Manual Logical Database Dumps
+To create an off-site logical backup:
+```bash
+# Dump compressed database schema & data
+mysqldump -h YOUR_RDS_ENDPOINT -u admin -p --single-transaction --routines --triggers tuntas | gzip > tuntas-backup-$(date +%F).sql.gz
+
+# Restore database dump
+gunzip < tuntas-backup-2026-11-24.sql.gz | mysql -h YOUR_RDS_ENDPOINT -u admin -p tuntas
+```
+
+### 3. Persistent Storage Volumes
+The application mounts persistent storage for user uploads, logs, and framework caches:
+```bash
+# Backup persistent named volumes
+docker run --rm -v tuntas_app-storage:/data -v $(pwd):/backup alpine tar czf /backup/storage-backup-$(date +%F).tar.gz /data
+```
+
+---
+
+## 📚 Release Documentation & Changelogs
+
+- **[RELEASE_NOTES.md](RELEASE_NOTES.md)**: Release v2.0.0-GA highlights, pre-flight deployment checklist, rollback procedures, and known limitations.
+- **[CHANGELOG.md](CHANGELOG.md)**: Comprehensive changelog tracking all major, minor, and patch revisions.
+- **[DEPLOYMENT.md](DEPLOYMENT.md)**: Production deployment manual for AWS EC2, AWS RDS MariaDB, Nginx Reverse Proxy with Let's Encrypt SSL, and AWS Application Load Balancers.
 
 ---
 
