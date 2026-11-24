@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\SubtaskController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserSettingController;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -28,12 +29,27 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     // Health check
     Route::get('/health', function () {
+        $dbConnected = false;
+        try {
+            DB::connection()->getPdo();
+            $dbConnected = true;
+        } catch (\Throwable $e) {
+            $dbConnected = false;
+        }
+
+        $isHealthy = $dbConnected;
+
         return response()->json([
-            'status' => 'ok',
+            'status' => $isHealthy ? 'ok' : 'degraded',
+            'health' => $isHealthy ? 'healthy' : 'degraded',
             'system' => 'Tuntas API',
             'version' => '2.0.0',
+            'environment' => config('app.env'),
             'timestamp' => now()->toIso8601String(),
-        ]);
+            'services' => [
+                'database' => $dbConnected ? 'connected' : 'disconnected',
+            ],
+        ], $isHealthy ? 200 : 503);
     });
 
     // Public Authentication (rate limited)

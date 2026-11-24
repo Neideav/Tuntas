@@ -168,13 +168,202 @@ Tambahkan baris berikut:
 Uji kesehatan aplikasi dari terminal host:
 
 ```bash
-# Uji API Health check
+# Uji API Health check (melalui Next.js reverse proxy di port 80)
 curl -i http://localhost/api/v1/health
+```
 
-# Uji Frontend Next.js
-curl -i http://localhost:3000
-```
-Respon sukses:
+Respon sukses saat database terhubung (HTTP 200 OK):
 ```json
-{"status":"healthy","database":"connected","timestamp":"2026-11-24T12:00:00Z"}
+{
+  "status": "ok",
+  "health": "healthy",
+  "system": "Tuntas API",
+  "version": "2.0.0",
+  "environment": "production",
+  "timestamp": "2026-11-24T12:00:00Z",
+  "services": {
+    "database": "connected"
+  }
+}
 ```
+
+Jika database terputus atau mengalami gangguan (HTTP 503 Service Unavailable):
+```json
+{
+  "status": "degraded",
+  "health": "degraded",
+  "system": "Tuntas API",
+  "version": "2.0.0",
+  "environment": "production",
+  "timestamp": "2026-11-24T12:00:00Z",
+  "services": {
+    "database": "disconnected"
+  }
+}
+```
+
+---
+
+## 10. Konfigurasi HTTPS & SSL Termination
+
+Untuk produksi publik, sangat direkomendasikan mengaktifkan enkripsi HTTPS menggunakan **Nginx Host Reverse Proxy + Certbot (Let's Encrypt)** atau **AWS Application Load Balancer (ALB)**.
+
+### Opsi A: Nginx Reverse Proxy di Host EC2 + Let's Encrypt (Certbot)
+
+Jika instance EC2 langsung menerima traffic publik:
+
+1. Install Nginx dan Certbot di host Ubuntu:
+```bash
+sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx
+```
+
+2. Konfigurasikan virtual host Nginx (`/etc/nginx/sites-available/tuntas`):
+```nginx
+server {
+    server_name app.tuntas.id; # Ganti dengan domain Anda
+
+    location / {
+        proxy_pass http://127.0.0.1:80; # Meneruskan ke container Docker Tuntas
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 90;
+    }
+}
+```
+
+3. Aktifkan konfigurasi dan generate sertifikat SSL otomatis:
+```bash
+sudo ln -s /etc/nginx/sites-available/tuntas /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d app.tuntas.id
+```
+
+### Opsi B: AWS Application Load Balancer (ALB) + ACM (Amazon Certificate Manager)
+
+Jika menggunakan topologi enterprise AWS:
+1. Buat **Target Group**: Target type `Instance` atau `IP`, Protocol `HTTP`, Port `80`.
+2. Set Health Check path ke `/api/v1/health` dengan matcher `200`.
+3. Buat **ALB Listener**:
+   - Port `80` (HTTP) -> Redirect ke `443` (HTTPS).
+   - Port `443` (HTTPS) -> Forward ke Target Group Tuntas dengan sertifikat ACM.
+4. Pastikan di `.env` file Tuntas:
+   ```env
+   TRUSTED_PROXIES=*
+   SESSION_SECURE_COOKIE=true
+   ```
+
+---
+
+## 11. Monitoring, Health Check & Logging
+
+### Health Check Docker
+Container `tuntas` memiliki internal healthcheck terkonfigurasi di `docker-compose.yml`:
+```bash
+docker inspect --format='{{json .State.Health}}' tuntas | jq
+```
+Status akan bernilai `"Status": "healthy"` jika endpoint `/api/v1/health` mengembalikan status 200.
+
+### Logging Terkelola
+Docker Compose membatasi ukuran log agar disk EBS EC2 tidak penuh:
+- Driver: `json-file`
+- Max size: `10m`
+- Max file: `3` (rotasi maksimal 30 MB)
+
+Melihat log live:
+```bash
+# Log seluruh aplikasi (Next.js & Laravel)
+docker compose logs -f app
+
+# Log Laravel internal
+docker compose exec app tail -n 100 /var/www/html/storage/logs/laravel.log
+```
+
+---
+
+## 12. Panduan Troubleshooting Masalah Produksi
+
+### 1. Database Connection Timeout / Refused
+- **Gejala**: `Failed to connect to database at ... after 30 attempts. Aborting startup.`
+- **Penyebab**: Security group RDS tidak mengizinkan inbound dari IP privat EC2, atau credential salah.
+- **Solusi**:
+  1. Periksa Security Group AWS RDS: pastikan inbound port 3306 mengizinkan Security Group ID dari instance EC2 (`sg-xxxxxx`).
+  2. Tes koneksi dari host EC2: `nc -zv YOUR_RDS_ENDPOINT 3306`.
+  3. Periksa file `.env`: pastikan `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, dan `DB_PASSWORD` sesuai.
+
+### 2. AWS RDS SSL Certificate Verification Failure
+- **Gejala**: `SQLSTATE[HY000] [2002] ... SSL certificate validation failed`.
+- **Penyebab**: File bundle sertifikat CA tidak ditemukan atau corrupt.
+- **Solusi**:
+  1. File `global-bundle.pem` telah di-download otomatis saat build Docker ke `/etc/ssl/certs/global-bundle.pem`.
+  2. Pastikan di `.env`:
+     ```env
+     MYSQL_ATTR_SSL_CA=/etc/ssl/certs/global-bundle.pem
+     DB_SSL_VERIFY_CERT=true
+     ```
+
+### 3. Migrasi Terkunci (`Isolated migration lock busy`)
+- **Gejala**: Migrasi tidak berjalan atau log menampilkan peringatan lock.
+- **Penyebab**: Container sebelumnya mati mendadak saat menjalankan migrasi dan atomic cache lock belum kedaluwarsa.
+- **Solusi**:
+  1. Hapus cache lock migrasi:
+     ```bash
+     docker compose exec app php artisan cache:forget "illuminate:migrations"
+     ```
+  2. Jalankan migrasi manual:
+     ```bash
+     docker compose exec app php artisan migrate --force
+     ```
+
+### 4. Permission Denied pada Storage / Cache
+- **Gejala**: `The stream or file ".../storage/logs/laravel.log" could not be opened: Failed to open stream: Permission denied`.
+- **Solusi**:
+  Jalankan perbaikan permission pada volume storage:
+  ```bash
+  docker compose exec -u root app chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
+  ```
+
+---
+
+## 13. Prosedur Rollback Aman (Safe Rollback Procedure)
+
+Jika rilis versi baru mengalami bug kritis di produksi, lakukan rollback dengan prosedur berikut:
+
+### Langkah 1: Identifikasi Versi Stabil Sebelumnya
+Periksa commit hash stabil terakhir di repository:
+```bash
+git log --oneline -n 5
+```
+
+### Langkah 2: Revert Kode ke Commit Stabil
+```bash
+# Checkout ke commit stabil sebelumnya
+git checkout <COMMIT_HASH_SEBELUMNYA>
+```
+
+### Langkah 3: Rollback Database (Jika Ada Perubahan Skema)
+Jika commit yang dibatalkan memiliki migrasi baru yang perlu dibatalkan:
+```bash
+docker compose exec app php artisan migrate:rollback --step=1 --force
+```
+
+### Langkah 4: Rebuild & Restart Container
+```bash
+# Rebuild image Docker dengan kode versi stabil
+docker compose build --no-cache
+
+# Restart container
+docker compose down
+docker compose up -d
+
+# Verifikasi status dan health check
+docker compose ps
+curl -i http://localhost/api/v1/health
+```
+Aplikasi akan kembali berjalan pada versi stabil sebelumnya dalam hitungan detik tanpa meninggalkan data corrupt.

@@ -1,16 +1,49 @@
-node_modules
-.next
+# Version control
 .git
+.gitignore
 .github
-apps/api/vendor
-apps/api/storage/*.key
-apps/api/storage/logs/*.log
-apps/api/storage/framework/sessions/*
-apps/api/storage/framework/views/*
-apps/api/storage/framework/cache/data/*
-apps/api/database/database.sqlite*
-.env
-.env.local
-dist
-tmp
 
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# PHP / Composer
+vendor/
+composer.lock.backup
+storage/*.key
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+
+# Node / Frontend
+node_modules/
+.next/
+src/.next/
+out/
+build/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Database & local sqlite
+database/*.sqlite
+database/*.sqlite-journal
+database/*.sqlite-shm
+database/*.sqlite-wal
+
+# Testing & Coverage
+tests/
+phpunit.xml.bak
+.phpunit.result.cache
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
