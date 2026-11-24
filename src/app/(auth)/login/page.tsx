@@ -11,7 +11,7 @@ import {
   GoogleAuthButton,
   AuthInteractionState,
 } from '@/components/auth';
-import { AlertCircle, ArrowRight, UserPlus, Sparkles } from 'lucide-react';
+import { AlertCircle, ArrowRight, UserPlus } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -71,19 +71,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleFillDemo = () => {
-    setEmail('demo@tuntas.test');
-    setPassword('Password123!');
-    setInteractionState('emailFocus');
-    setTimeout(() => setInteractionState('idle'), 800);
-  };
-
-  const handleFillStudent = () => {
-    setEmail('student@tuntas.app');
-    setPassword('Password123!');
-    setInteractionState('emailFocus');
-    setTimeout(() => setInteractionState('idle'), 800);
-  };
 
   return (
     <AuthLayout
@@ -197,25 +184,6 @@ export default function LoginPage() {
           {/* Google OAuth Button */}
           <GoogleAuthButton label="Log in with Google" disabled={loading} />
 
-          {/* Demo Credentials Quick Triggers */}
-          <div className="flex items-center justify-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={handleFillStudent}
-              className="py-1 px-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-semibold transition cursor-pointer flex items-center gap-1.5"
-            >
-              <Sparkles className="h-3 w-3 text-indigo-500" />
-              <span>student@tuntas.app</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="py-1 px-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-semibold transition cursor-pointer flex items-center gap-1.5"
-            >
-              <Sparkles className="h-3 w-3 text-amber-500" />
-              <span>demo@tuntas.test</span>
-            </button>
-          </div>
         </form>
 
         {/* Footer Registration Link */}
