@@ -21,6 +21,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
+import { showToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -174,8 +175,9 @@ export default function ProjectsPage() {
 
       setIsModalOpen(false);
       fetchProjects();
+      showToast(editingProject ? 'Proyek berhasil diperbarui' : 'Proyek berhasil dibuat', 'success');
     } catch (err: any) {
-      alert(extractApiErrorMessage(err, 'Gagal menyimpan proyek.'));
+      showToast(extractApiErrorMessage(err, 'Gagal menyimpan proyek.'), 'error');
     } finally {
       setSaving(false);
     }
@@ -278,7 +280,9 @@ export default function ProjectsPage() {
     try {
       await api.delete(`/projects/${id}`);
       setProjects((prev) => prev.filter((p) => p.id !== id));
+      showToast('Proyek berhasil dihapus', 'info');
     } catch (err) {
+      showToast(extractApiErrorMessage(err, 'Gagal menghapus proyek.'), 'error');
       console.error(err);
     }
   };

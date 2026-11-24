@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
+import { showToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';

@@ -8,6 +8,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { RouteProgressBar } from '@/components/layout/RouteProgressBar';
 import { MotionProvider, PageTransition } from '@/components/animations';
 import { SidebarProvider, useSidebar } from '@/components/layout/sidebar-context';
+import { ToastProvider } from '@/components/ui/Toast';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
@@ -79,11 +80,13 @@ export default function DashboardLayout({
   return (
     <MotionProvider>
       <SidebarProvider>
-        <RouteProgressBar />
-        <div className="min-h-screen bg-[#f8f9fa] text-slate-900">
-          <Sidebar />
-          <DashboardContent>{children}</DashboardContent>
-        </div>
+        <ToastProvider>
+          <RouteProgressBar />
+          <div className="min-h-screen bg-[#f8f9fa] text-slate-900">
+            <Sidebar />
+            <DashboardContent>{children}</DashboardContent>
+          </div>
+        </ToastProvider>
       </SidebarProvider>
     </MotionProvider>
   );

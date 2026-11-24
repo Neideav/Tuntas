@@ -31,6 +31,7 @@ import {
   Folder,
 } from 'lucide-react';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
+import { showToast } from '@/components/ui/Toast';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -306,9 +307,10 @@ export default function TasksPage() {
         setFormTags('');
         setFormSubtasks(['']);
         fetchTasks();
+        showToast('Tugas berhasil dibuat', 'success');
       }
     } catch (err: any) {
-      alert(extractApiErrorMessage(err, 'Gagal membuat tugas.'));
+      showToast(extractApiErrorMessage(err, 'Gagal membuat tugas.'), 'error');
     } finally {
       setSaving(false);
     }
@@ -399,7 +401,9 @@ export default function TasksPage() {
       if (selectedTask?.id === taskId) {
         setSelectedTask(null);
       }
+      showToast('Tugas berhasil dihapus', 'info');
     } catch (err) {
+      showToast(extractApiErrorMessage(err, 'Gagal menghapus tugas.'), 'error');
       console.error(err);
     }
   };

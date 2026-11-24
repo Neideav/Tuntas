@@ -19,6 +19,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
+import { showToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -179,9 +180,10 @@ export default function HabitsPage() {
         setSelectedDays([]);
         setFreezeTokens(2);
         fetchHabits();
+        showToast('Kebiasaan baru berhasil dibuat', 'success');
       }
     } catch (err: any) {
-      alert(extractApiErrorMessage(err, 'Gagal membuat kebiasaan baru.'));
+      showToast(extractApiErrorMessage(err, 'Gagal membuat kebiasaan baru.'), 'error');
     } finally {
       setSaving(false);
     }
