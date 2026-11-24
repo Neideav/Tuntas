@@ -18,7 +18,7 @@ import {
   Folder,
   CheckSquare,
 } from 'lucide-react';
-import api, { getCachedData } from '@/lib/api';
+import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -141,6 +141,7 @@ export default function GoalsPage() {
         fetchGoals();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal memperbarui target.'));
       console.error(err);
     } finally {
       setSavingEditGoal(false);
@@ -171,6 +172,7 @@ export default function GoalsPage() {
         fetchGoals();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal membuat target / goal.'));
       console.error(err);
     } finally {
       setSavingGoal(false);

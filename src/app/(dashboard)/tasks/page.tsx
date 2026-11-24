@@ -30,7 +30,7 @@ import {
   RefreshCw,
   Folder,
 } from 'lucide-react';
-import api, { getCachedData } from '@/lib/api';
+import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -308,7 +308,7 @@ export default function TasksPage() {
         fetchTasks();
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal membuat tugas.');
+      alert(extractApiErrorMessage(err, 'Gagal membuat tugas.'));
     } finally {
       setSaving(false);
     }

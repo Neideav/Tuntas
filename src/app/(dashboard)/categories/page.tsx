@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Tags, Plus, Trash2, Folder, Edit2 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -69,6 +69,7 @@ export default function CategoriesPage() {
         }
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal membuat kategori.'));
       console.error(err);
     } finally {
       setSavingCat(false);
@@ -99,6 +100,7 @@ export default function CategoriesPage() {
         }
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal memperbarui kategori.'));
       console.error(err);
     } finally {
       setSavingEditCat(false);
@@ -114,6 +116,7 @@ export default function CategoriesPage() {
         window.dispatchEvent(new Event('tuntas:categories-changed'));
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal menghapus kategori.'));
       console.error(err);
     }
   };
@@ -133,6 +136,7 @@ export default function CategoriesPage() {
         fetchData();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal membuat tag.'));
       console.error(err);
     } finally {
       setSavingTag(false);

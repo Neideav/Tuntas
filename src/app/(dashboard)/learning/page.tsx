@@ -19,7 +19,7 @@ import {
   Award,
   Sparkles,
 } from 'lucide-react';
-import api, { getCachedData } from '@/lib/api';
+import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -207,6 +207,7 @@ export default function LearningPage() {
         fetchData();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal membuat mata pelajaran / kursus.'));
       console.error(err);
     } finally {
       setSavingCourse(false);
@@ -229,6 +230,7 @@ export default function LearningPage() {
         fetchData();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal membuat modul.'));
       console.error(err);
     } finally {
       setSavingModule(false);
@@ -241,6 +243,7 @@ export default function LearningPage() {
       await api.delete(`/modules/${moduleId}`);
       fetchData();
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal menghapus modul.'));
       console.error(err);
     }
   };
@@ -275,6 +278,7 @@ export default function LearningPage() {
         fetchData();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal membuat materi / pelajaran.'));
       console.error(err);
     } finally {
       setSavingLesson(false);
@@ -287,6 +291,7 @@ export default function LearningPage() {
       await api.delete(`/lessons/${lessonId}`);
       fetchData();
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal menghapus materi.'));
       console.error(err);
     }
   };
@@ -314,6 +319,7 @@ export default function LearningPage() {
         fetchData();
       }
     } catch (err) {
+      alert(extractApiErrorMessage(err, 'Gagal mencatat sesi belajar.'));
       console.error(err);
     } finally {
       setSavingSession(false);

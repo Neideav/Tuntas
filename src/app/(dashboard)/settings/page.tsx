@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
@@ -110,7 +110,7 @@ export default function SettingsPage() {
         setTimeout(() => setStatusMsg(null), 4000);
       }
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || 'Failed to update profile. Please check your inputs.');
+      setErrorMsg(extractApiErrorMessage(err, 'Failed to update profile. Please check your inputs.'));
     } finally {
       setSavingProfile(false);
     }
@@ -147,7 +147,7 @@ export default function SettingsPage() {
         setTimeout(() => setPasswordStatusMsg(null), 4000);
       }
     } catch (err: any) {
-      setPasswordErrorMsg(err.response?.data?.message || 'Password update failed. Please check your current password.');
+      setPasswordErrorMsg(extractApiErrorMessage(err, 'Password update failed. Please check your current password.'));
     } finally {
       setSavingPassword(false);
     }

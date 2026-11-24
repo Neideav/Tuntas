@@ -18,7 +18,7 @@ import {
   Archive,
   RotateCcw,
 } from 'lucide-react';
-import api, { getCachedData } from '@/lib/api';
+import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -181,7 +181,7 @@ export default function HabitsPage() {
         fetchHabits();
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Could not create habit.');
+      alert(extractApiErrorMessage(err, 'Gagal membuat kebiasaan baru.'));
     } finally {
       setSaving(false);
     }

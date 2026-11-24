@@ -20,7 +20,7 @@ import {
   Activity,
   AlertTriangle,
 } from 'lucide-react';
-import api, { getCachedData } from '@/lib/api';
+import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -175,7 +175,7 @@ export default function ProjectsPage() {
       setIsModalOpen(false);
       fetchProjects();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal menyimpan proyek.');
+      alert(extractApiErrorMessage(err, 'Gagal menyimpan proyek.'));
     } finally {
       setSaving(false);
     }
