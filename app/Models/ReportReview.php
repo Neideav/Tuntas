@@ -15,10 +15,12 @@ class ReportReview extends Model
         'status',
         'feedback',
         'version',
+        'report_snapshot',
     ];
 
     protected $casts = [
         'version' => 'integer',
+        'report_snapshot' => 'array',
     ];
 
     public function workReport()

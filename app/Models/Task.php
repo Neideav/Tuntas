@@ -26,6 +26,9 @@ class Task extends Model
         'is_recurring',
         'recurrence_pattern',
         'order',
+        'requires_report',
+        'requires_review',
+        'completion_conditions',
         'completed_at',
     ];
 
@@ -36,6 +39,9 @@ class Task extends Model
         'completed_at' => 'datetime',
         'is_recurring' => 'boolean',
         'order' => 'integer',
+        'requires_report' => 'boolean',
+        'requires_review' => 'boolean',
+        'completion_conditions' => 'array',
     ];
 
     public function user()
@@ -105,5 +111,42 @@ class Task extends Model
     public function hasUncompletedDependencies(): bool
     {
         return $this->dependencies()->where('status', '!=', 'completed')->exists();
+    }
+
+    /**
+     * Check if this task has at least one approved report.
+     */
+    public function hasApprovedReport(): bool
+    {
+        return $this->workReports()->where('status', WorkReport::STATUS_APPROVED)->exists();
+    }
+
+    /**
+     * Validate whether this task meets all completion conditions.
+     *
+     * @return array{allowed: bool, reason: string|null}
+     */
+    public function canBeCompleted(): array
+    {
+        // 1. Prerequisite dependencies condition
+        if ($this->hasUncompletedDependencies()) {
+            return [
+                'allowed' => false,
+                'reason' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
+            ];
+        }
+
+        // 2. Report requirement condition
+        if ($this->requires_report && !$this->hasApprovedReport()) {
+            return [
+                'allowed' => false,
+                'reason' => 'Tugas ini memerlukan laporan yang telah disetujui (approved report) sebelum dapat diselesaikan.',
+            ];
+        }
+
+        return [
+            'allowed' => true,
+            'reason' => null,
+        ];
     }
 }

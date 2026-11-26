@@ -130,6 +130,25 @@ class TaskController extends Controller
             }
         }
 
+        // Validate completion conditions upon task creation
+        if (($validated['status'] ?? 'todo') === 'completed') {
+            if (!empty($validated['requires_report'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tugas ini memerlukan laporan yang telah disetujui (approved report) sebelum dapat diselesaikan.',
+                ], 422);
+            }
+            if (!empty($validated['dependencies'])) {
+                $hasIncomplete = Task::whereIn('id', $validated['dependencies'])->where('status', '!=', 'completed')->exists();
+                if ($hasIncomplete) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
+                    ], 422);
+                }
+            }
+        }
+
         $task = DB::transaction(function () use ($request, $validated) {
             $task = Task::create([
                 'user_id' => $request->user()->id,
@@ -144,6 +163,9 @@ class TaskController extends Controller
                 'due_date' => $validated['due_date'] ?? null,
                 'start_date' => $validated['start_date'] ?? null,
                 'reminder_at' => $validated['reminder_at'] ?? null,
+                'requires_report' => $validated['requires_report'] ?? false,
+                'requires_review' => $validated['requires_review'] ?? false,
+                'completion_conditions' => $validated['completion_conditions'] ?? null,
                 'is_recurring' => $validated['is_recurring'] ?? false,
                 'recurrence_pattern' => $validated['recurrence_pattern'] ?? 'daily',
                 'completed_at' => ($validated['status'] ?? 'todo') === 'completed' ? Carbon::now() : null,
@@ -264,6 +286,9 @@ class TaskController extends Controller
             'start_date' => 'nullable|date',
             'due_date' => 'nullable|date|after_or_equal:start_date',
             'reminder_at' => 'nullable|date',
+            'requires_report' => 'nullable|boolean',
+            'requires_review' => 'nullable|boolean',
+            'completion_conditions' => 'nullable|array',
             'is_recurring' => 'nullable|boolean',
             'recurrence_pattern' => 'nullable|in:daily,weekly,monthly',
             'tags' => 'nullable|array',
@@ -282,12 +307,16 @@ class TaskController extends Controller
             }
         }
 
-        // Check prerequisite dependencies if marking as completed
+        // Enforce completion rules
         if (isset($validated['status']) && $validated['status'] === 'completed') {
-            if ($task->hasUncompletedDependencies()) {
+            if (isset($validated['requires_report'])) {
+                $task->requires_report = (bool) $validated['requires_report'];
+            }
+            $canComplete = $task->canBeCompleted();
+            if (!$canComplete['allowed']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
+                    'message' => $canComplete['reason'],
                 ], 422);
             }
         }
@@ -359,12 +388,15 @@ class TaskController extends Controller
 
         $newStatus = $task->status === 'completed' ? 'todo' : 'completed';
 
-        // Check dependencies when completing
-        if ($newStatus === 'completed' && $task->hasUncompletedDependencies()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
-            ], 422);
+        // Enforce completion rules when completing
+        if ($newStatus === 'completed') {
+            $canComplete = $task->canBeCompleted();
+            if (!$canComplete['allowed']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $canComplete['reason'],
+                ], 422);
+            }
         }
 
         DB::transaction(function () use ($task, $newStatus) {
@@ -443,8 +475,11 @@ class TaskController extends Controller
                 $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
 
                 foreach ($tasks as $task) {
-                    if ($newStatus === 'completed' && $task->hasUncompletedDependencies()) {
-                        continue; // Skip tasks that have blocking dependencies
+                    if ($newStatus === 'completed') {
+                        $canComplete = $task->canBeCompleted();
+                        if (!$canComplete['allowed']) {
+                            continue; // Skip tasks that have blocking dependencies or require approved report
+                        }
                     }
                     $task->update([
                         'status' => $newStatus,

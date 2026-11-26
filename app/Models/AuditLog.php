@@ -13,7 +13,6 @@ class AuditLog extends Model
 
     protected $fillable = [
         'user_id',
-        'project_id',
         'action',
         'auditable_type',
         'auditable_id',
@@ -33,14 +32,38 @@ class AuditLog extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function project()
-    {
-        return $this->belongsTo(Project::class);
-    }
-
     public function auditable()
     {
         return $this->morphTo();
+    }
+
+    public static function log(
+        ?int $userId,
+        string $action,
+        ?string $description = null,
+        ?int $projectId = null,
+        ?array $payload = null,
+        ?Model $auditable = null
+    ): self {
+        $auditableType = $auditable ? get_class($auditable) : (isset($payload['report_id']) ? WorkReport::class : User::class);
+        $auditableId = $auditable ? (string) $auditable->getKey() : (string) ($payload['report_id'] ?? $userId ?? '0');
+
+        $fullPayload = array_merge(
+            $payload ?? [],
+            $description ? ['description' => $description] : [],
+            $projectId ? ['project_id' => $projectId] : []
+        );
+
+        return self::create([
+            'user_id' => $userId ?? 1,
+            'action' => $action,
+            'auditable_type' => $auditableType,
+            'auditable_id' => $auditableId,
+            'payload' => $fullPayload,
+            'ip_address' => request()?->ip() ?? '127.0.0.1',
+            'user_agent' => request()?->userAgent() ?? 'System',
+            'created_at' => now(),
+        ]);
     }
 }
 

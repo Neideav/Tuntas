@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\SubtaskController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserSettingController;
+use App\Http\Controllers\Api\WorkReportController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -147,6 +148,7 @@ Route::prefix('v1')->group(function () {
         Route::post('tasks/bulk', [TaskController::class, 'bulkAction']);
         Route::apiResource('tasks', TaskController::class);
         Route::patch('tasks/{task}/toggle', [TaskController::class, 'toggleStatus']);
+        Route::patch('tasks/{task}/status', [TaskController::class, 'toggleStatus']);
         Route::post('tasks/{task}/subtasks', [SubtaskController::class, 'store']);
         Route::patch('subtasks/{subtask}/toggle', [SubtaskController::class, 'toggle']);
         Route::delete('subtasks/{subtask}', [SubtaskController::class, 'destroy']);
@@ -184,6 +186,15 @@ Route::prefix('v1')->group(function () {
         Route::post('notes/{note}/attachments', [NoteController::class, 'uploadAttachment']);
         Route::delete('notes/{note}/attachments/{attachment}', [NoteController::class, 'deleteAttachment']);
         Route::apiResource('notes', NoteController::class);
+
+        // Reports Module (Workspace, Project, Task Reports with Review & Approval Workflow)
+        Route::post('reports/{report}/submit', [WorkReportController::class, 'submit']);
+        Route::post('reports/{report}/start-review', [WorkReportController::class, 'startReview']);
+        Route::post('reports/{report}/request-revision', [WorkReportController::class, 'requestRevision']);
+        Route::post('reports/{report}/resubmit', [WorkReportController::class, 'resubmit']);
+        Route::post('reports/{report}/approve', [WorkReportController::class, 'approve']);
+        Route::post('reports/{report}/reject', [WorkReportController::class, 'reject']);
+        Route::apiResource('reports', WorkReportController::class);
 
         // Dedicated Examination System
         Route::apiResource('examinations', ExaminationController::class);

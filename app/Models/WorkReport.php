@@ -10,6 +10,17 @@ class WorkReport extends Model
 {
     use HasFactory, SoftDeletes;
 
+    // Report Types
+    public const TYPE_TASK_REPORT = 'task_report';
+    public const TYPE_PROGRESS_REPORT = 'progress_report';
+    public const TYPE_COMPLETION_REPORT = 'completion_report';
+
+    // Report Contexts
+    public const CONTEXT_WORKSPACE = 'workspace';
+    public const CONTEXT_PROJECT = 'project';
+    public const CONTEXT_TASK = 'task';
+
+    // Report Lifecycle Statuses
     public const STATUS_DRAFT = 'draft';
     public const STATUS_SUBMITTED = 'submitted';
     public const STATUS_IN_REVIEW = 'in_review';
@@ -22,7 +33,11 @@ class WorkReport extends Model
         'project_id',
         'task_id',
         'reviewer_id',
+        'type',
+        'context_type',
+        'version',
         'title',
+        'summary',
         'content',
         'status',
         'submitted_at',
@@ -31,6 +46,7 @@ class WorkReport extends Model
     ];
 
     protected $casts = [
+        'version' => 'integer',
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'metrics' => 'array',
@@ -38,7 +54,7 @@ class WorkReport extends Model
 
     public function user()
     {
-        return $this->belongsTo(User::class); // Submitter
+        return $this->belongsTo(User::class); // Author / Submitter
     }
 
     public function reviewer()
@@ -58,7 +74,7 @@ class WorkReport extends Model
 
     public function reviews()
     {
-        return $this->hasMany(ReportReview::class)->orderBy('version', 'desc');
+        return $this->hasMany(ReportReview::class)->orderBy('id', 'desc');
     }
 
     public function mentions()
@@ -68,7 +84,12 @@ class WorkReport extends Model
 
     public function scopeWorkspace($query)
     {
-        return $query->whereNull('project_id')->whereNull('task_id');
+        return $query->where(function ($q) {
+            $q->where('context_type', self::CONTEXT_WORKSPACE)
+              ->orWhere(function ($sub) {
+                  $sub->whereNull('project_id')->whereNull('task_id');
+              });
+        });
     }
 
     public function scopeForProject($query, $projectId)
@@ -79,5 +100,45 @@ class WorkReport extends Model
     public function scopeForTask($query, $taskId)
     {
         return $query->where('task_id', $taskId);
+    }
+
+    public function scopeByType($query, $type)
+    {
+        return $query->where('type', $type);
+    }
+
+    public function scopeByStatus($query, $status)
+    {
+        return $query->where('status', $status);
+    }
+
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
+    public function isSubmitted(): bool
+    {
+        return $this->status === self::STATUS_SUBMITTED;
+    }
+
+    public function isInReview(): bool
+    {
+        return $this->status === self::STATUS_IN_REVIEW;
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->status === self::STATUS_APPROVED;
+    }
+
+    public function isRevisionRequested(): bool
+    {
+        return $this->status === self::STATUS_REVISION_REQUESTED;
+    }
+
+    public function isRejected(): bool
+    {
+        return $this->status === self::STATUS_REJECTED;
     }
 }

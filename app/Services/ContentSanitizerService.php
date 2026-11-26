@@ -63,4 +63,53 @@ class ContentSanitizerService
             'roles' => array_values(array_unique($roleMentions)),
         ];
     }
+
+    /**
+     * Alias for sanitize to ensure backward and forward compatibility.
+     */
+    public function sanitizeHtml(?string $content): string
+    {
+        return $this->sanitize($content);
+    }
+
+    /**
+     * Extract mentions and store them in the mentions table for any mentionable model.
+     */
+    public function extractAndStoreMentions($user, $mentionable, string $content, ?int $projectId = null): void
+    {
+        $extracted = $this->extractMentions($content);
+
+        // Delete previous mentions for this model
+        $mentionable->mentions()->delete();
+
+        // Mentioned Users
+        if (!empty($extracted['users'])) {
+            $users = \App\Models\User::whereIn('name', $extracted['users'])
+                ->orWhereIn('email', $extracted['users'])
+                ->get();
+
+            foreach ($users as $u) {
+                $mentionable->mentions()->create([
+                    'mentioner_id' => $user->id,
+                    'mentioned_user_id' => $u->id,
+                    'project_id' => $projectId,
+                ]);
+            }
+        }
+
+        // Mentioned Roles
+        if (!empty($extracted['roles']) && $projectId) {
+            $roles = \App\Models\ProjectRole::where('project_id', $projectId)
+                ->whereIn('slug', $extracted['roles'])
+                ->get();
+
+            foreach ($roles as $r) {
+                $mentionable->mentions()->create([
+                    'mentioner_id' => $user->id,
+                    'mentioned_role_id' => $r->id,
+                    'project_id' => $projectId,
+                ]);
+            }
+        }
+    }
 }

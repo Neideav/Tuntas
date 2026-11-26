@@ -29,6 +29,7 @@ import {
   X,
   Check,
   FileText,
+  ClipboardCheck,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { SPRING_TRANSITIONS } from '@/lib/animations';
@@ -45,6 +46,7 @@ const navigationGroups = [
       { name: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
       { name: 'Tasks', href: '/tasks', icon: CheckSquare },
       { name: 'Notes', href: '/notes', icon: FileText },
+      { name: 'Reports', href: '/reports', icon: ClipboardCheck },
       { name: 'Calendar', href: '/calendar', icon: Calendar },
     ],
   },
