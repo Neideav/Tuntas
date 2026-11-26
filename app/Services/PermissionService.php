@@ -15,22 +15,22 @@ class PermissionService
      */
     public function userHasProjectPermission(User $user, Project $project, string $permission): bool
     {
-        // 1. Direct project creator/owner always has full access
+        // 1. Direct project creator/owner always has full wildcard access
         if ($project->user_id === $user->id) {
             return true;
         }
 
         // 2. Check project membership
-        $member = ProjectMember::with('role')
+        $member = ProjectMember::with('projectRole')
             ->where('project_id', $project->id)
             ->where('user_id', $user->id)
             ->first();
 
-        if (!$member || !$member->role) {
+        if (!$member) {
             return false;
         }
 
-        return $member->role->hasPermission($permission);
+        return $member->hasPermission($permission);
     }
 
     /**
@@ -43,7 +43,7 @@ class PermissionService
             $project = $task->project ?? Project::find($task->project_id);
             if ($project) {
                 // Task assignee can always view and complete their assigned task
-                if ($task->assigned_to === $user->id && in_array($permission, ['task:view', 'task:complete'], true)) {
+                if ($task->assigned_to === $user->id && in_array($permission, ['tasks.view', 'tasks.complete', 'task:view', 'task:complete'], true)) {
                     return true;
                 }
                 return $this->userHasProjectPermission($user, $project, $permission);
@@ -69,12 +69,98 @@ class PermissionService
                 ->first();
         }
 
-        $member = ProjectMember::with('role')
+        $member = ProjectMember::with('projectRole')
             ->where('project_id', $project->id)
             ->where('user_id', $user->id)
             ->first();
 
-        return $member?->role;
+        return $member?->projectRole;
+    }
+
+    /**
+     * Get array of all effective permissions for a user on a project.
+     */
+    public function getUserEffectivePermissions(User $user, Project $project): array
+    {
+        if ($project->user_id === $user->id) {
+            return ['*'];
+        }
+
+        $member = ProjectMember::with('projectRole')
+            ->where('project_id', $project->id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$member) {
+            return [];
+        }
+
+        if ($member->role === ProjectRole::ROLE_OWNER) {
+            return ['*'];
+        }
+
+        if ($member->projectRole) {
+            return $member->projectRole->permissions ?? [];
+        }
+
+        return ProjectRole::getDefaultPermissions($member->role);
+    }
+
+    /**
+     * Check if user is allowed to manage (create, edit, delete) roles in project.
+     */
+    public function canManageRole(User $user, Project $project, ?ProjectRole $targetRole = null, string $action = 'update'): bool
+    {
+        // Must have roles permission
+        $requiredPerm = match ($action) {
+            'create' => 'roles.create',
+            'delete' => 'roles.delete',
+            default => 'roles.update',
+        };
+
+        if (!$this->userHasProjectPermission($user, $project, $requiredPerm) &&
+            !$this->userHasProjectPermission($user, $project, 'roles.manage')) {
+            return false;
+        }
+
+        if ($targetRole) {
+            // Built-in Owner role cannot be modified or deleted by anyone
+            if ($targetRole->slug === ProjectRole::ROLE_OWNER) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if user is allowed to manage (invite, change role, remove) a member in project.
+     */
+    public function canManageMember(User $user, Project $project, ?User $targetUser = null, string $action = 'manage'): bool
+    {
+        $requiredPerm = match ($action) {
+            'invite' => 'members.invite',
+            'remove' => 'members.remove',
+            default => 'members.manage',
+        };
+
+        if (!$this->userHasProjectPermission($user, $project, $requiredPerm)) {
+            return false;
+        }
+
+        if ($targetUser) {
+            // Cannot remove or demote project creator/owner
+            if ($targetUser->id === $project->user_id) {
+                return false;
+            }
+
+            // Cannot remove yourself through member remove endpoint (should use leave instead if permitted)
+            if ($targetUser->id === $user->id && $action === 'remove' && $project->user_id === $user->id) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

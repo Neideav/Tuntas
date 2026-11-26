@@ -10,6 +10,7 @@ use App\Models\Subtask;
 use App\Models\Tag;
 use App\Models\Task;
 use App\Http\Requests\Task\StoreTaskRequest;
+use App\Services\PermissionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,13 +18,24 @@ use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
 {
+    public function __construct(
+        protected PermissionService $permissionService
+    ) {}
+
     /**
      * List user tasks with advanced filtering, searching, and pagination.
      */
     public function index(Request $request)
     {
-        $query = Task::where('user_id', $request->user()->id)
-            ->with(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']);
+        $userId = $request->user()->id;
+        $query = Task::where(function ($q) use ($userId) {
+                $q->where('user_id', $userId)
+                  ->orWhere('assigned_to', $userId)
+                  ->orWhereHas('project.members', function ($mq) use ($userId) {
+                      $mq->where('user_id', $userId);
+                  });
+            })
+            ->with(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents', 'assignee']);
 
         // Filter by Status
         if ($request->filled('status') && $request->status !== 'all') {
@@ -108,9 +120,20 @@ class TaskController extends Controller
     {
         $validated = $request->validated();
 
+        if (!empty($validated['project_id'])) {
+            $project = Project::find($validated['project_id']);
+            if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.create')) {
+                abort(403, 'Unauthorized to create tasks in this project.');
+            }
+            if (!empty($validated['assigned_to']) && $project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
+                abort(403, 'Unauthorized to assign tasks in this project.');
+            }
+        }
+
         $task = DB::transaction(function () use ($request, $validated) {
             $task = Task::create([
                 'user_id' => $request->user()->id,
+                'assigned_to' => $validated['assigned_to'] ?? null,
                 'project_id' => $validated['project_id'] ?? null,
                 'category_id' => $validated['category_id'] ?? null,
                 'goal_id' => $validated['goal_id'] ?? null,
@@ -189,11 +212,13 @@ class TaskController extends Controller
      */
     public function show(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.view')) {
+            abort(403, 'Unauthorized.');
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
+            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents', 'assignee']),
         ]);
     }
 
@@ -202,7 +227,10 @@ class TaskController extends Controller
      */
     public function update(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.update')) {
+            abort(403, 'Unauthorized.');
+        }
+
         $userId = $request->user()->id;
 
         $validated = $request->validate([
@@ -210,9 +238,20 @@ class TaskController extends Controller
             'description' => 'nullable|string',
             'status' => 'nullable|in:todo,in_progress,in_review,completed,cancelled',
             'priority' => 'nullable|in:low,medium,high,urgent',
+            'assigned_to' => 'nullable|exists:users,id',
             'project_id' => [
                 'nullable',
-                Rule::exists('projects', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
+                Rule::exists('projects', 'id')->where(function ($query) use ($userId) {
+                    $query->where(function ($sub) use ($userId) {
+                        $sub->where('user_id', $userId)
+                            ->orWhereExists(function ($memberQuery) use ($userId) {
+                                $memberQuery->select(DB::raw(1))
+                                    ->from('project_members')
+                                    ->whereColumn('project_members.project_id', 'projects.id')
+                                    ->where('project_members.user_id', $userId);
+                            });
+                    });
+                }),
             ],
             'category_id' => [
                 'nullable',
@@ -235,6 +274,13 @@ class TaskController extends Controller
                 Rule::exists('tasks', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
             ],
         ]);
+
+        if (array_key_exists('assigned_to', $validated) && $task->project_id) {
+            $project = $task->project ?? Project::find($task->project_id);
+            if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
+                abort(403, 'Unauthorized to assign tasks in this project.');
+            }
+        }
 
         // Check prerequisite dependencies if marking as completed
         if (isset($validated['status']) && $validated['status'] === 'completed') {
@@ -307,7 +353,9 @@ class TaskController extends Controller
      */
     public function toggleStatus(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.complete')) {
+            abort(403, 'Unauthorized.');
+        }
 
         $newStatus = $task->status === 'completed' ? 'todo' : 'completed';
 
@@ -462,7 +510,9 @@ class TaskController extends Controller
      */
     public function destroy(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.delete')) {
+            abort(403, 'Unauthorized.');
+        }
 
         DB::transaction(function () use ($task) {
             $projectId = $task->project_id;
@@ -532,7 +582,7 @@ class TaskController extends Controller
 
     private function authorizeOwner(Request $request, Task $task): void
     {
-        if ($task->user_id !== $request->user()->id) {
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.update')) {
             abort(403, 'Unauthorized.');
         }
     }

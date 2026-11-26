@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\HabitController;
 use App\Http\Controllers\Api\LearningController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\ProjectMemberController;
+use App\Http\Controllers\Api\ProjectRoleController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SubtaskController;
 use App\Http\Controllers\Api\TagController;
@@ -154,6 +156,23 @@ Route::prefix('v1')->group(function () {
         Route::delete('projects/{project}/milestones/{milestone}', [ProjectController::class, 'deleteMilestone']);
         Route::patch('projects/{project}/archive', [ProjectController::class, 'toggleArchive']);
         Route::apiResource('projects', ProjectController::class);
+
+        // Project Roles & Permissions
+        Route::get('permissions/catalog', [ProjectRoleController::class, 'catalog']);
+        Route::get('projects/{project}/roles', [ProjectRoleController::class, 'index']);
+        Route::post('projects/{project}/roles', [ProjectRoleController::class, 'store']);
+        Route::get('projects/{project}/roles/{role}', [ProjectRoleController::class, 'show']);
+        Route::put('projects/{project}/roles/{role}', [ProjectRoleController::class, 'update']);
+        Route::delete('projects/{project}/roles/{role}', [ProjectRoleController::class, 'destroy']);
+
+        // Project Members & Invitations
+        Route::get('projects/{project}/members', [ProjectMemberController::class, 'index']);
+        Route::post('projects/{project}/invitations', [ProjectMemberController::class, 'invite']);
+        Route::get('projects/{project}/invitations', [ProjectMemberController::class, 'invitations']);
+        Route::delete('projects/{project}/invitations/{invitation}', [ProjectMemberController::class, 'cancelInvitation']);
+        Route::patch('projects/{project}/members/{user}/role', [ProjectMemberController::class, 'updateRole']);
+        Route::delete('projects/{project}/members/{user}', [ProjectMemberController::class, 'destroy']);
+        Route::post('invitations/{token}/accept', [ProjectMemberController::class, 'acceptInvitation']);
 
         // Dedicated Examination System
         Route::apiResource('examinations', ExaminationController::class);

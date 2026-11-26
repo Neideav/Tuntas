@@ -19,6 +19,7 @@ import {
   Check,
   Activity,
   AlertTriangle,
+  Users,
 } from 'lucide-react';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { showToast } from '@/components/ui/Toast';
@@ -28,6 +29,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProjectsSkeleton } from '@/components/ui/Skeleton';
+import { ProjectMembersModal } from '@/components/projects/ProjectMembersModal';
 
 interface Milestone {
   id: number;
@@ -55,6 +57,7 @@ interface Project {
   milestones?: Milestone[];
   milestones_count?: number;
   completed_milestones_count?: number;
+  members_count?: number;
   goal?: { id: number; title: string };
 }
 
@@ -80,6 +83,7 @@ export default function ProjectsPage() {
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [membersModalProject, setMembersModalProject] = useState<Project | null>(null);
 
   // Form State
   const [title, setTitle] = useState('');
@@ -441,6 +445,13 @@ export default function ProjectsPage() {
 
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => setMembersModalProject(project)}
+                        className="p-1 text-slate-400 hover:text-indigo-600 transition cursor-pointer"
+                        title="Kelola Tim & Peran"
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                      </button>
+                      <button
                         onClick={() => openEditModal(project)}
                         className="p-1 text-slate-400 hover:text-slate-800 transition cursor-pointer"
                         title="Edit Project"
@@ -568,13 +579,24 @@ export default function ProjectsPage() {
 
                 {/* Footer Metadata */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-slate-400" />
-                    <span>
-                      {project.deadline
-                        ? `Due ${new Date(project.deadline).toLocaleDateString()}`
-                        : 'No deadline'}
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      <span>
+                        {project.deadline
+                          ? `Due ${new Date(project.deadline).toLocaleDateString()}`
+                          : 'No deadline'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setMembersModalProject(project)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-indigo-600 transition cursor-pointer"
+                    >
+                      <Users className="h-3 w-3" />
+                      <span>{project.members_count || 1} anggota</span>
+                    </button>
                   </div>
 
                   <Link
@@ -713,6 +735,19 @@ export default function ProjectsPage() {
           </div>
         </form>
       </Modal>
+
+      {/* TEAM MEMBERS & ROLES MODAL */}
+      {membersModalProject && (
+        <ProjectMembersModal
+          isOpen={!!membersModalProject}
+          projectId={membersModalProject.id}
+          projectTitle={membersModalProject.title}
+          onClose={() => {
+            setMembersModalProject(null);
+            fetchProjects(true);
+          }}
+        />
+      )}
     </div>
   );
 }
