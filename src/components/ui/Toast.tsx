@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { SPRING_TRANSITIONS } from '@/lib/animations';
 
-export type ToastType = 'success' | 'error' | 'info';
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 export interface ToastItem {
   id: string;
@@ -18,6 +18,7 @@ interface ToastContextType {
     success: (msg: string) => void;
     error: (msg: string) => void;
     info: (msg: string) => void;
+    warning: (msg: string) => void;
   };
 }
 
@@ -59,6 +60,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: (msg: string) => addToast(msg, 'success'),
     error: (msg: string) => addToast(msg, 'error'),
     info: (msg: string) => addToast(msg, 'info'),
+    warning: (msg: string) => addToast(msg, 'warning'),
   };
 
   return (
@@ -83,12 +85,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   ? 'bg-slate-900/95 text-white border-slate-800'
                   : t.type === 'error'
                   ? 'bg-rose-900/95 text-white border-rose-800'
+                  : t.type === 'warning'
+                  ? 'bg-amber-900/95 text-white border-amber-800'
                   : 'bg-white/95 text-slate-900 border-slate-200'
               }`}
             >
               <div className="flex items-center gap-2.5 truncate">
                 {t.type === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />}
                 {t.type === 'error' && <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />}
+                {t.type === 'warning' && <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />}
                 {t.type === 'info' && <Info className="h-4 w-4 text-sky-500 shrink-0" />}
                 <span className="truncate">{t.message}</span>
               </div>

@@ -186,7 +186,7 @@ export default function TasksPage() {
         setSelectedTask(null);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal menyimpan perubahan tugas.');
+      showToast(err.response?.data?.message || 'Gagal menyimpan perubahan tugas.', 'error');
     } finally {
       setSavingEditTask(false);
     }
@@ -343,7 +343,7 @@ export default function TasksPage() {
     if (!targetTask || targetTask.status === newStatus) return;
 
     if (newStatus === 'completed' && targetTask.dependencies?.some((d) => d.status !== 'completed')) {
-      alert('Tugas tidak dapat diselesaikan karena ada tugas prasyarat yang belum selesai.');
+      showToast('Tugas tidak dapat diselesaikan karena ada tugas prasyarat yang belum selesai.', 'warning');
       return;
     }
 
@@ -360,7 +360,7 @@ export default function TasksPage() {
         );
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal memindahkan tugas.');
+      showToast(err.response?.data?.message || 'Gagal memindahkan tugas.', 'error');
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: previousStatus } : t))
       );
@@ -371,7 +371,7 @@ export default function TasksPage() {
     const newStatus: Task['status'] = task.status === 'completed' ? 'todo' : 'completed';
 
     if (newStatus === 'completed' && task.dependencies?.some((d) => d.status !== 'completed')) {
-      alert('Tugas tidak dapat diselesaikan karena ada tugas prasyarat yang belum selesai.');
+      showToast('Tugas tidak dapat diselesaikan karena ada tugas prasyarat yang belum selesai.', 'warning');
       return;
     }
 
@@ -386,7 +386,7 @@ export default function TasksPage() {
         );
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal mengubah status tugas.');
+      showToast(err.response?.data?.message || 'Gagal mengubah status tugas.', 'error');
       setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
       );
@@ -435,7 +435,7 @@ export default function TasksPage() {
         fetchTasks();
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Gagal memproses aksi massal.');
+      showToast(err.response?.data?.message || 'Gagal memproses aksi massal.', 'error');
     } finally {
       setIsBulkLoading(false);
     }

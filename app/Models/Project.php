@@ -57,6 +57,36 @@ class Project extends Model
         return $this->hasMany(ProjectMilestone::class)->orderBy('order');
     }
 
+    public function members()
+    {
+        return $this->hasMany(ProjectMember::class);
+    }
+
+    public function roles()
+    {
+        return $this->hasMany(ProjectRole::class);
+    }
+
+    public function invitations()
+    {
+        return $this->hasMany(ProjectInvitation::class);
+    }
+
+    public function notes()
+    {
+        return $this->hasMany(Note::class);
+    }
+
+    public function workReports()
+    {
+        return $this->hasMany(WorkReport::class);
+    }
+
+    public function activityLogs()
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
     public function tags()
     {
         return $this->morphToMany(Tag::class, 'taggable');

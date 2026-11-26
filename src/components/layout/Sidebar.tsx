@@ -33,6 +33,7 @@ import api from '@/lib/api';
 import { SPRING_TRANSITIONS } from '@/lib/animations';
 import { useSidebar } from './sidebar-context';
 import { HelpModal } from '@/components/ui/HelpModal';
+import { showToast } from '@/components/ui/Toast';
 
 // Sidebar Groups Configuration
 const navigationGroups = [
@@ -254,7 +255,7 @@ export function Sidebar() {
       }
       setCategoryModal({ isOpen: false, mode: 'create' });
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to save category.');
+      showToast(err.response?.data?.message || 'Failed to save category.', 'error');
     } finally {
       setSavingCategory(false);
     }
@@ -266,8 +267,9 @@ export function Sidebar() {
       await api.delete(`/categories/${id}`);
       setCategories((prev) => prev.filter((c) => c.id !== id));
       setActiveCategoryMenu(null);
+      showToast('Category deleted successfully.', 'info');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to delete category.');
+      showToast(err.response?.data?.message || 'Failed to delete category.', 'error');
     }
   };
 

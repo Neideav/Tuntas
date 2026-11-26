@@ -242,7 +242,7 @@ export default function ProjectsPage() {
         );
       }
     } catch (err) {
-      alert(extractApiErrorMessage(err, 'Gagal menghapus milestone.'));
+      showToast(extractApiErrorMessage(err, 'Gagal menghapus milestone.'), 'error');
     }
   };
 

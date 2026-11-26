@@ -13,6 +13,7 @@ class AuditLog extends Model
 
     protected $fillable = [
         'user_id',
+        'project_id',
         'action',
         'auditable_type',
         'auditable_id',
@@ -30,6 +31,16 @@ class AuditLog extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function project()
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    public function auditable()
+    {
+        return $this->morphTo();
     }
 }
 
