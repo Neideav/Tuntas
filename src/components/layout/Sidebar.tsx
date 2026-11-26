@@ -28,6 +28,7 @@ import {
   Trash2,
   X,
   Check,
+  FileText,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { SPRING_TRANSITIONS } from '@/lib/animations';
@@ -43,6 +44,7 @@ const navigationGroups = [
       { name: 'Dashboard', href: '/dashboard', icon: Home },
       { name: 'Notifications', href: '/notifications', icon: Bell, badgeKey: 'notifications' },
       { name: 'Tasks', href: '/tasks', icon: CheckSquare },
+      { name: 'Notes', href: '/notes', icon: FileText },
       { name: 'Calendar', href: '/calendar', icon: Calendar },
     ],
   },

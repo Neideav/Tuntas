@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\ExaminationController;
 use App\Http\Controllers\Api\GoalController;
 use App\Http\Controllers\Api\HabitController;
 use App\Http\Controllers\Api\LearningController;
+use App\Http\Controllers\Api\NoteController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectMemberController;
@@ -173,6 +174,16 @@ Route::prefix('v1')->group(function () {
         Route::patch('projects/{project}/members/{user}/role', [ProjectMemberController::class, 'updateRole']);
         Route::delete('projects/{project}/members/{user}', [ProjectMemberController::class, 'destroy']);
         Route::post('invitations/{token}/accept', [ProjectMemberController::class, 'acceptInvitation']);
+
+        // Notes Module (Workspace, Project, Task Documentation)
+        Route::patch('notes/{note}/pin', [NoteController::class, 'togglePin']);
+        Route::post('notes/{note}/convert-to-task', [NoteController::class, 'convertToTask']);
+        Route::post('notes/{note}/restore/{version}', [NoteController::class, 'restoreVersion']);
+        Route::post('notes/{note}/comments', [NoteController::class, 'addComment']);
+        Route::delete('notes/{note}/comments/{comment}', [NoteController::class, 'deleteComment']);
+        Route::post('notes/{note}/attachments', [NoteController::class, 'uploadAttachment']);
+        Route::delete('notes/{note}/attachments/{attachment}', [NoteController::class, 'deleteAttachment']);
+        Route::apiResource('notes', NoteController::class);
 
         // Dedicated Examination System
         Route::apiResource('examinations', ExaminationController::class);

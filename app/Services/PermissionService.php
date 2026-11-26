@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Note;
 use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\ProjectRole;
@@ -52,6 +53,40 @@ class PermissionService
 
         // 2. Personal task: owner or assignee has access
         if ($task->user_id === $user->id || $task->assigned_to === $user->id) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a user has a specific permission on a note.
+     */
+    public function userHasNotePermission(User $user, Note $note, string $permission): bool
+    {
+        // 1. Author of the note always has full rights to their own note
+        if ($note->user_id === $user->id) {
+            return true;
+        }
+
+        // 2. Project context note
+        if ($note->project_id) {
+            $project = $note->project ?? Project::find($note->project_id);
+            if ($project) {
+                return $this->userHasProjectPermission($user, $project, $permission);
+            }
+        }
+
+        // 3. Task context note
+        if ($note->task_id) {
+            $task = $note->task ?? Task::find($note->task_id);
+            if ($task) {
+                return $this->userHasTaskPermission($user, $task, $permission);
+            }
+        }
+
+        // 4. Workspace context note: viewing allowed if visibility is public or team
+        if (in_array($permission, ['notes.view', 'note:view'], true) && in_array($note->visibility, [Note::VISIBILITY_TEAM, Note::VISIBILITY_PUBLIC], true)) {
             return true;
         }
 
