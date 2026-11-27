@@ -103,8 +103,15 @@ class ProjectRoleController extends Controller
             ], 422);
         }
 
-        // Security check: Protect system permissions (e.g. project.delete) from custom roles
-        $permissions = array_values(array_unique(array_filter($validated['permissions'], fn ($p) => $p !== 'project.delete')));
+        // Security check: Reject protected owner privileges (e.g. project.delete) from custom roles
+        if (in_array('project.delete', $validated['permissions'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Izin 'project.delete' merupakan izin khusus Pemilik proyek dan tidak dapat diberikan kepada peran kustom.",
+            ], 422);
+        }
+
+        $permissions = array_values(array_unique($validated['permissions']));
 
         $role = ProjectRole::create([
             'project_id' => $project->id,
@@ -209,9 +216,14 @@ class ProjectRoleController extends Controller
         }
 
         if (isset($validated['permissions'])) {
-            // Strip project.delete if attempted on non-owner roles
-            $perms = array_values(array_unique(array_filter($validated['permissions'], fn ($p) => $p !== 'project.delete')));
-            $updateData['permissions'] = $perms;
+            // Reject project.delete if attempted on custom/non-owner roles
+            if (in_array('project.delete', $validated['permissions'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Izin 'project.delete' merupakan izin khusus Pemilik proyek dan tidak dapat diberikan kepada peran kustom.",
+                ], 422);
+            }
+            $updateData['permissions'] = array_values(array_unique($validated['permissions']));
         }
 
         $role->update($updateData);

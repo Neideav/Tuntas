@@ -116,21 +116,26 @@ class ProjectMemberController extends Controller
             }
         }
 
-        // Resolve role
+        // Resolve role strictly within this project
         $roleId = $validated['role_id'] ?? null;
         $roleSlug = $validated['role'] ?? 'member';
 
+        $roleObj = null;
         if ($roleId) {
             $roleObj = ProjectRole::where('id', $roleId)->where('project_id', $project->id)->first();
-            if ($roleObj) {
-                $roleSlug = $roleObj->slug;
-            }
         } else {
             $roleObj = ProjectRole::where('project_id', $project->id)->where('slug', $roleSlug)->first();
-            if ($roleObj) {
-                $roleId = $roleObj->id;
-            }
         }
+
+        if (!$roleObj) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Peran yang dipilih tidak valid atau tidak ditemukan dalam proyek ini.',
+            ], 422);
+        }
+
+        $roleId = $roleObj->id;
+        $roleSlug = $roleObj->slug;
 
         // Privilege escalation check: Non-owners cannot invite someone as Owner
         if ($roleSlug === ProjectRole::ROLE_OWNER && $project->user_id !== $user->id) {
@@ -256,57 +261,84 @@ class ProjectMemberController extends Controller
 
     /**
      * Accept invitation via token.
+     * Enforces strict email recipient binding, single-use token lifecycle,
+     * and atomic row locking to eliminate concurrent acceptance race conditions.
      */
     public function acceptInvitation(Request $request, string $token)
     {
-        $user = $request->user();
+        return DB::transaction(function () use ($request, $token) {
+            $user = $request->user();
 
-        $invitation = ProjectInvitation::where('token', $token)->first();
+            // Lock the invitation row for update to prevent concurrent replay race conditions
+            $invitation = ProjectInvitation::where('token', $token)
+                ->lockForUpdate()
+                ->first();
 
-        if (!$invitation) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Token undangan tidak valid atau tidak ditemukan.',
-            ], 404);
-        }
+            if (!$invitation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token undangan tidak valid atau tidak ditemukan.',
+                ], 404);
+            }
 
-        if ($invitation->status !== 'pending') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Undangan ini sudah pernah digunakan atau telah ditolak.',
-            ], 422);
-        }
+            if ($invitation->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Undangan ini sudah pernah digunakan atau telah ditolak.',
+                ], 422);
+            }
 
-        if ($invitation->isExpired()) {
-            $invitation->update(['status' => 'expired']);
-            return response()->json([
-                'success' => false,
-                'message' => 'Masa berlaku undangan ini telah kedaluwarsa.',
-            ], 422);
-        }
+            if ($invitation->isExpired()) {
+                $invitation->update(['status' => 'expired']);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Masa berlaku undangan ini telah kedaluwarsa.',
+                ], 422);
+            }
 
-        // Attach user to project
-        $project = Project::find($invitation->project_id);
-        if (!$project) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Proyek tujuan undangan sudah tidak ada.',
-            ], 404);
-        }
+            // CRITICAL SECURITY ENFORCEMENT: Invitation MUST strictly match target email
+            if (strtolower(trim($user->email)) !== strtolower(trim($invitation->email))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Undangan ini ditujukan untuk alamat email yang berbeda (' . $invitation->email . '). Silakan masuk dengan akun yang sesuai.',
+                ], 403);
+            }
 
-        $member = DB::transaction(function () use ($project, $user, $invitation) {
-            // Check if already a member
-            $member = ProjectMember::firstOrCreate(
-                [
-                    'project_id' => $project->id,
-                    'user_id' => $user->id,
-                ],
-                [
-                    'role_id' => $invitation->role_id,
-                    'role' => $invitation->role ?? 'member',
-                    'joined_at' => now(),
-                ]
-            );
+            // Attach user to project
+            $project = Project::find($invitation->project_id);
+            if (!$project) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Proyek tujuan undangan sudah tidak ada.',
+                ], 404);
+            }
+
+            // Check if already an active member to prevent duplicate membership
+            $existingMember = ProjectMember::where('project_id', $project->id)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingMember) {
+                $invitation->update(['status' => 'accepted']);
+                return response()->json([
+                    'success' => true,
+                    'message' => "Anda sudah menjadi anggota proyek '{$project->title}'.",
+                    'data' => [
+                        'project_id' => $project->id,
+                        'project_title' => $project->title,
+                        'role' => $existingMember->role,
+                    ],
+                ]);
+            }
+
+            $member = ProjectMember::create([
+                'project_id' => $project->id,
+                'user_id' => $user->id,
+                'role_id' => $invitation->role_id,
+                'role' => $invitation->role ?? 'member',
+                'joined_at' => now(),
+            ]);
 
             $invitation->update([
                 'status' => 'accepted',
@@ -325,21 +357,19 @@ class ProjectMemberController extends Controller
                 'created_at' => now(),
             ]);
 
-            return $member;
+            // Notify admins about new member
+            $this->notificationService->notifyMemberJoined($user, $project);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Anda telah berhasil bergabung dengan proyek '{$project->title}'.",
+                'data' => [
+                    'project_id' => $project->id,
+                    'project_title' => $project->title,
+                    'role' => $member->role,
+                ],
+            ]);
         });
-
-        // Notify admins about new member
-        $this->notificationService->notifyMemberJoined($user, $project);
-
-        return response()->json([
-            'success' => true,
-            'message' => "Anda telah berhasil bergabung dengan proyek '{$project->title}'.",
-            'data' => [
-                'project_id' => $project->id,
-                'project_title' => $project->title,
-                'role' => $member->role,
-            ],
-        ]);
     }
 
     /**
@@ -372,17 +402,22 @@ class ProjectMemberController extends Controller
         $roleId = $validated['role_id'] ?? null;
         $roleSlug = $validated['role'] ?? 'member';
 
+        $roleObj = null;
         if ($roleId) {
             $roleObj = ProjectRole::where('id', $roleId)->where('project_id', $project->id)->first();
-            if ($roleObj) {
-                $roleSlug = $roleObj->slug;
-            }
         } else {
             $roleObj = ProjectRole::where('project_id', $project->id)->where('slug', $roleSlug)->first();
-            if ($roleObj) {
-                $roleId = $roleObj->id;
-            }
         }
+
+        if (!$roleObj) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Peran yang dipilih tidak valid atau tidak ditemukan dalam proyek ini.',
+            ], 422);
+        }
+
+        $roleId = $roleObj->id;
+        $roleSlug = $roleObj->slug;
 
         // Non-owners cannot promote someone to Owner
         if ($roleSlug === ProjectRole::ROLE_OWNER && $currentUser->id !== $project->user_id) {

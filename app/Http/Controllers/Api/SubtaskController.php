@@ -5,17 +5,22 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Subtask;
 use App\Models\Task;
+use App\Services\PermissionService;
 use Illuminate\Http\Request;
 
 class SubtaskController extends Controller
 {
+    public function __construct(
+        protected PermissionService $permissionService
+    ) {}
+
     /**
      * Add subtask to a task.
      */
     public function store(Request $request, Task $task)
     {
-        if ($task->user_id !== $request->user()->id) {
-            abort(403);
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.update')) {
+            abort(403, 'Unauthorized.');
         }
 
         $validated = $request->validate([
@@ -42,8 +47,10 @@ class SubtaskController extends Controller
      */
     public function toggle(Request $request, Subtask $subtask)
     {
-        if ($subtask->task->user_id !== $request->user()->id) {
-            abort(403);
+        $task = $subtask->task;
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.complete') &&
+            !$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.update')) {
+            abort(403, 'Unauthorized.');
         }
 
         $subtask->update([
@@ -61,8 +68,10 @@ class SubtaskController extends Controller
      */
     public function destroy(Request $request, Subtask $subtask)
     {
-        if ($subtask->task->user_id !== $request->user()->id) {
-            abort(403);
+        $task = $subtask->task;
+        if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.update') &&
+            !$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.delete')) {
+            abort(403, 'Unauthorized.');
         }
 
         $subtask->delete();

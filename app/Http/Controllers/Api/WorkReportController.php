@@ -51,18 +51,32 @@ class WorkReportController extends Controller
                       ->orWhere('reviewer_id', $user->id);
                 });
         } else {
-            // General visibility: Author can see own reports, project members can see project reports, assigned reviewers
+            // General visibility: Author can see own personal/workspace reports, project members can see project reports, assigned reviewers
             $userProjectIds = ProjectMember::where('user_id', $user->id)->pluck('project_id')->toArray();
             $ownedProjectIds = Project::where('user_id', $user->id)->pluck('id')->toArray();
             $allAccessibleProjectIds = array_unique(array_merge($userProjectIds, $ownedProjectIds));
 
             $query->where(function ($q) use ($user, $allAccessibleProjectIds) {
-                $q->where('user_id', $user->id)
-                  ->orWhere('reviewer_id', $user->id)
-                  ->orWhere(function ($sub) use ($allAccessibleProjectIds) {
-                      $sub->whereIn('project_id', $allAccessibleProjectIds)
-                          ->where('status', '!=', WorkReport::STATUS_DRAFT); // Other members only see submitted/reviewed
-                  });
+                // Workspace reports authored by user or assigned reviewer
+                $q->where(function ($personal) use ($user) {
+                    $personal->whereNull('project_id')
+                             ->where(function ($p) use ($user) {
+                                 $p->where('user_id', $user->id)
+                                   ->orWhere('reviewer_id', $user->id);
+                             });
+                });
+
+                // Project reports in accessible projects
+                if (!empty($allAccessibleProjectIds)) {
+                    $q->orWhere(function ($sub) use ($user, $allAccessibleProjectIds) {
+                        $sub->whereIn('project_id', $allAccessibleProjectIds)
+                            ->where(function ($projSub) use ($user) {
+                                $projSub->where('user_id', $user->id)
+                                        ->orWhere('reviewer_id', $user->id)
+                                        ->orWhere('status', '!=', WorkReport::STATUS_DRAFT);
+                            });
+                    });
+                }
             });
         }
 
@@ -77,8 +91,12 @@ class WorkReportController extends Controller
             }
         }
 
-        // Filter: Project ID
+        // Filter: Project ID (with strict authorization check)
         if ($projectId = $request->input('project_id')) {
+            $project = Project::find($projectId);
+            if (!$project || !$this->permissionService->userHasProjectPermission($user, $project, 'reports.view')) {
+                abort(403, 'Unauthorized to view reports in this project.');
+            }
             $query->where('project_id', $projectId);
         }
 

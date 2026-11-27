@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Goal;
 use App\Models\Project;
+use App\Models\ProjectMember;
 use App\Models\Subtask;
 use App\Models\Tag;
 use App\Models\Task;
@@ -31,12 +32,36 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $userId = $request->user()->id;
-        $query = Task::where(function ($q) use ($userId) {
-                $q->where('user_id', $userId)
-                  ->orWhere('assigned_to', $userId)
-                  ->orWhereHas('project.members', function ($mq) use ($userId) {
-                      $mq->where('user_id', $userId);
-                  });
+
+        // Project filtering: if a specific project is requested, verify tasks.view permission
+        if ($request->filled('project_id')) {
+            $projectId = (int) $request->project_id;
+            $project = Project::find($projectId);
+            if (!$project) {
+                return response()->json(['success' => false, 'message' => 'Project not found.'], 404);
+            }
+            if (!$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.view')) {
+                abort(403, 'Unauthorized to view tasks in this project.');
+            }
+        }
+
+        // Get all accessible projects where user is active owner/member with 'tasks.view' permission
+        $accessibleProjectIds = $this->permissionService->getUserProjectsWithPermission($request->user(), 'tasks.view');
+
+        $query = Task::where(function ($q) use ($userId, $accessibleProjectIds) {
+                // 1. Personal tasks: must have project_id IS NULL, and user is creator or assignee
+                $q->where(function ($personal) use ($userId) {
+                    $personal->whereNull('project_id')
+                             ->where(function ($p) use ($userId) {
+                                 $p->where('user_id', $userId)
+                                   ->orWhere('assigned_to', $userId);
+                             });
+                });
+
+                // 2. Project tasks: user must have active project membership/ownership granting 'tasks.view'
+                if (!empty($accessibleProjectIds)) {
+                    $q->orWhereIn('project_id', $accessibleProjectIds);
+                }
             })
             ->with(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents', 'assignee']);
 
@@ -57,7 +82,7 @@ class TaskController extends Controller
 
         // Filter by Project
         if ($request->filled('project_id')) {
-            $query->where('project_id', $request->project_id);
+            $query->where('project_id', (int) $request->project_id);
         }
 
         // Filter by Goal
@@ -125,11 +150,42 @@ class TaskController extends Controller
 
         if (!empty($validated['project_id'])) {
             $project = Project::find($validated['project_id']);
-            if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.create')) {
+            if (!$project || !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.create')) {
                 abort(403, 'Unauthorized to create tasks in this project.');
             }
-            if (!empty($validated['assigned_to']) && $project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
-                abort(403, 'Unauthorized to assign tasks in this project.');
+            if (!empty($validated['assigned_to'])) {
+                if (!$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
+                    abort(403, 'Unauthorized to assign tasks in this project.');
+                }
+                $isAssigneeInProject = ProjectMember::where('project_id', $project->id)
+                    ->where('user_id', $validated['assigned_to'])
+                    ->exists() || $project->user_id === (int) $validated['assigned_to'];
+                if (!$isAssigneeInProject) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Pengguna yang ditugaskan bukan merupakan anggota proyek ini.',
+                    ], 422);
+                }
+            }
+        }
+
+        // Validate task dependencies belong to same project or personal context
+        if (!empty($validated['dependencies'])) {
+            $projectId = $validated['project_id'] ?? null;
+            $invalidDeps = Task::whereIn('id', $validated['dependencies'])
+                ->where(function ($dq) use ($projectId, $request) {
+                    if ($projectId) {
+                        $dq->where('project_id', '!=', $projectId)->orWhereNull('project_id');
+                    } else {
+                        $dq->where('user_id', '!=', $request->user()->id)->orWhereNotNull('project_id');
+                    }
+                })->exists();
+
+            if ($invalidDeps) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Dependensi prasyarat harus berada dalam konteks proyek atau tugas personal yang sama.',
+                ], 422);
             }
         }
 
@@ -328,10 +384,24 @@ class TaskController extends Controller
             if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
                 abort(403, 'Unauthorized to assign tasks in this project.');
             }
+            if (!empty($validated['assigned_to']) && $project) {
+                $isAssigneeInProject = ProjectMember::where('project_id', $project->id)
+                    ->where('user_id', $validated['assigned_to'])
+                    ->exists() || $project->user_id === (int) $validated['assigned_to'];
+                if (!$isAssigneeInProject) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Pengguna yang ditugaskan bukan merupakan anggota proyek ini.',
+                    ], 422);
+                }
+            }
         }
 
-        // Enforce completion rules
-        if (isset($validated['status']) && $validated['status'] === 'completed') {
+        // Enforce completion authorization and conditions
+        if (isset($validated['status']) && $validated['status'] === 'completed' && $task->status !== 'completed') {
+            if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.complete')) {
+                abort(403, 'Unauthorized to mark this task as completed.');
+            }
             if (isset($validated['requires_report'])) {
                 $task->requires_report = (bool) $validated['requires_report'];
             }
@@ -498,14 +568,21 @@ class TaskController extends Controller
         $validated = $request->validate([
             'action' => 'required|in:status,delete,assign_project,assign_category',
             'task_ids' => 'required|array|min:1',
-            'task_ids.*' => [
-                'integer',
-                Rule::exists('tasks', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
-            ],
+            'task_ids.*' => 'integer|exists:tasks,id',
             'status' => 'nullable|in:todo,in_progress,completed,cancelled',
             'project_id' => [
                 'nullable',
-                Rule::exists('projects', 'id')->where(fn ($q) => $q->where('user_id', $userId)),
+                Rule::exists('projects', 'id')->where(function ($query) use ($userId) {
+                    $query->where(function ($sub) use ($userId) {
+                        $sub->where('user_id', $userId)
+                            ->orWhereExists(function ($memberQuery) use ($userId) {
+                                $memberQuery->select(DB::raw(1))
+                                    ->from('project_members')
+                                    ->whereColumn('project_members.project_id', 'projects.id')
+                                    ->where('project_members.user_id', $userId);
+                            });
+                    });
+                }),
             ],
             'category_id' => [
                 'nullable',
@@ -513,17 +590,45 @@ class TaskController extends Controller
             ],
         ]);
 
-        $taskIds = $validated['task_ids'];
+        $taskIds = array_values(array_unique($validated['task_ids']));
+        $tasks = Task::whereIn('id', $taskIds)->get();
+
+        if ($tasks->count() !== count($taskIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Satu atau lebih tugas tidak ditemukan.',
+            ], 404);
+        }
+
+        // Authorize each task strictly according to RBAC and context
+        $requiredPerm = match ($validated['action']) {
+            'delete' => 'tasks.delete',
+            'status' => 'tasks.complete',
+            default => 'tasks.update',
+        };
+
+        foreach ($tasks as $t) {
+            if (!$this->permissionService->userHasTaskPermission($request->user(), $t, $requiredPerm)) {
+                abort(403, "Anda tidak memiliki izin '{$requiredPerm}' pada tugas #{$t->id}.");
+            }
+        }
+
+        // Target project authorization for assign_project
+        if ($validated['action'] === 'assign_project' && !empty($validated['project_id'])) {
+            $targetProject = Project::find($validated['project_id']);
+            if (!$targetProject || !$this->permissionService->userHasProjectPermission($request->user(), $targetProject, 'tasks.create')) {
+                abort(403, 'Unauthorized to assign tasks into this target project.');
+            }
+        }
+
         $affectedCount = 0;
 
-        DB::transaction(function () use ($userId, $validated, $taskIds, &$affectedCount) {
-            $tasks = Task::where('user_id', $userId)->whereIn('id', $taskIds)->get();
-
+        DB::transaction(function () use ($userId, $validated, $tasks, $taskIds, &$affectedCount) {
             if ($validated['action'] === 'delete') {
                 $projectIds = $tasks->pluck('project_id')->filter()->unique();
                 $goalIds = $tasks->pluck('goal_id')->filter()->unique();
 
-                $affectedCount = Task::where('user_id', $userId)->whereIn('id', $taskIds)->delete();
+                $affectedCount = Task::whereIn('id', $taskIds)->delete();
 
                 foreach ($projectIds as $pId) {
                     Project::find($pId)?->updateProgress();
@@ -562,9 +667,7 @@ class TaskController extends Controller
                 $newProjectId = $validated['project_id'] ?? null;
                 $oldProjectIds = $tasks->pluck('project_id')->filter()->unique();
 
-                $affectedCount = Task::where('user_id', $userId)
-                    ->whereIn('id', $taskIds)
-                    ->update(['project_id' => $newProjectId]);
+                $affectedCount = Task::whereIn('id', $taskIds)->update(['project_id' => $newProjectId]);
 
                 if ($newProjectId) {
                     Project::find($newProjectId)?->updateProgress();
@@ -574,9 +677,7 @@ class TaskController extends Controller
                 }
             } elseif ($validated['action'] === 'assign_category') {
                 $newCatId = $validated['category_id'] ?? null;
-                $affectedCount = Task::where('user_id', $userId)
-                    ->whereIn('id', $taskIds)
-                    ->update(['category_id' => $newCatId]);
+                $affectedCount = Task::whereIn('id', $taskIds)->update(['category_id' => $newCatId]);
             }
 
             // Write audit log

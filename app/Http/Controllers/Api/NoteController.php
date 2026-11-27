@@ -40,17 +40,20 @@ class NoteController extends Controller
         $userId = $request->user()->id;
 
         // Base query: accessible notes
-        // 1. Notes authored by the user
-        // 2. OR Notes in projects where the user is an active member or owner
+        // 1. Personal / workspace notes authored by the user (where project_id is null)
+        // 2. Project notes in projects where the user is an active member or owner
         $query = Note::where(function ($q) use ($userId) {
-            $q->where('user_id', $userId)
-              ->orWhere(function ($sub) use ($userId) {
-                  $sub->whereNotNull('project_id')
-                      ->whereHas('project', function ($pq) use ($userId) {
-                          $pq->where('user_id', $userId)
-                             ->orWhereHas('members', fn ($mq) => $mq->where('user_id', $userId));
-                      });
-              });
+            $q->where(function ($personal) use ($userId) {
+                $personal->whereNull('project_id')
+                         ->where('user_id', $userId);
+            })
+            ->orWhere(function ($sub) use ($userId) {
+                $sub->whereNotNull('project_id')
+                    ->whereHas('project', function ($pq) use ($userId) {
+                        $pq->where('user_id', $userId)
+                           ->orWhereHas('members', fn ($mq) => $mq->where('user_id', $userId));
+                    });
+            });
         })->with(['user:id,name,email', 'project:id,title', 'task:id,title']);
 
         // Context filtering: 'workspace', 'project', 'task'
@@ -110,14 +113,17 @@ class NoteController extends Controller
 
         // Summary statistics calculation
         $accessibleBase = Note::where(function ($q) use ($userId) {
-            $q->where('user_id', $userId)
-              ->orWhere(function ($sub) use ($userId) {
-                  $sub->whereNotNull('project_id')
-                      ->whereHas('project', function ($pq) use ($userId) {
-                          $pq->where('user_id', $userId)
-                             ->orWhereHas('members', fn ($mq) => $mq->where('user_id', $userId));
-                      });
-              });
+            $q->where(function ($personal) use ($userId) {
+                $personal->whereNull('project_id')
+                         ->where('user_id', $userId);
+            })
+            ->orWhere(function ($sub) use ($userId) {
+                $sub->whereNotNull('project_id')
+                    ->whereHas('project', function ($pq) use ($userId) {
+                        $pq->where('user_id', $userId)
+                           ->orWhereHas('members', fn ($mq) => $mq->where('user_id', $userId));
+                    });
+            });
         })->active();
 
         $summary = [
