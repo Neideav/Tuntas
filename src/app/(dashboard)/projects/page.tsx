@@ -20,6 +20,7 @@ import {
   Activity,
   AlertTriangle,
   Users,
+  ChevronRight,
 } from 'lucide-react';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { showToast } from '@/components/ui/Toast';
@@ -30,6 +31,7 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProjectsSkeleton } from '@/components/ui/Skeleton';
 import { ProjectMembersModal } from '@/components/projects/ProjectMembersModal';
+import { ProjectDetailModal } from '@/components/projects/ProjectDetailModal';
 
 interface Milestone {
   id: number;
@@ -84,6 +86,7 @@ export default function ProjectsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [membersModalProject, setMembersModalProject] = useState<Project | null>(null);
+  const [detailModalProject, setDetailModalProject] = useState<Project | null>(null);
 
   // Form State
   const [title, setTitle] = useState('');
@@ -476,9 +479,13 @@ export default function ProjectsPage() {
                   </div>
 
                   {/* Title & Description */}
-                  <div className="mt-3">
-                    <h3 className="text-base font-bold text-slate-900 group-hover:text-black transition">
-                      {project.title}
+                  <div
+                    className="mt-3 cursor-pointer"
+                    onClick={() => setDetailModalProject(project)}
+                  >
+                    <h3 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition flex items-center justify-between">
+                      <span>{project.title}</span>
+                      <ChevronRight className="h-4 w-4 text-slate-400 opacity-0 group-hover:opacity-100 transition" />
                     </h3>
                     {project.description && (
                       <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">
@@ -746,6 +753,16 @@ export default function ProjectsPage() {
             setMembersModalProject(null);
             fetchProjects(true);
           }}
+        />
+      )}
+
+      {/* PROJECT DETAIL MODAL (8 TABS) */}
+      {detailModalProject && (
+        <ProjectDetailModal
+          isOpen={!!detailModalProject}
+          project={detailModalProject}
+          onClose={() => setDetailModalProject(null)}
+          onProjectUpdated={() => fetchProjects(true)}
         />
       )}
     </div>

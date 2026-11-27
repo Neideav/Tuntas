@@ -29,7 +29,9 @@ import {
   Target,
   RefreshCw,
   Folder,
+  ExternalLink,
 } from 'lucide-react';
+import Link from 'next/link';
 import api, { getCachedData, extractApiErrorMessage } from '@/lib/api';
 import { showToast } from '@/components/ui/Toast';
 import { Badge } from '@/components/ui/Badge';
@@ -70,6 +72,8 @@ interface Task {
   project_id?: number | null;
   category_id?: number | null;
   goal_id?: number | null;
+  requires_report?: boolean;
+  requires_review?: boolean;
   is_recurring?: boolean;
   recurrence_pattern?: 'daily' | 'weekly' | 'monthly' | null;
   subtasks?: Subtask[];
@@ -149,7 +153,12 @@ export default function TasksPage() {
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [savingEditTask, setSavingEditTask] = useState(false);
 
-  const openTaskDetail = (task: Task) => {
+  const [taskEditRequiresReport, setTaskEditRequiresReport] = useState(false);
+  const [taskRelatedNotes, setTaskRelatedNotes] = useState<any[]>([]);
+  const [taskRelatedReports, setTaskRelatedReports] = useState<any[]>([]);
+  const [loadingTaskRelations, setLoadingTaskRelations] = useState(false);
+
+  const openTaskDetail = async (task: Task) => {
     setSelectedTask(task);
     setTaskEditTitle(task.title);
     setTaskEditDescription(task.description || '');
@@ -161,7 +170,31 @@ export default function TasksPage() {
     setTaskEditDependencies(task.dependencies?.map((d) => d.id) || []);
     setTaskEditIsRecurring(!!task.is_recurring);
     setTaskEditRecurrencePattern(task.recurrence_pattern || 'daily');
+    setTaskEditRequiresReport(!!task.requires_report);
     setNewSubtaskTitle('');
+
+    // Fetch related notes & reports
+    setLoadingTaskRelations(true);
+    try {
+      const [notesRes, reportsRes] = await Promise.allSettled([
+        api.get('/notes', { params: { task_id: task.id } }),
+        api.get('/reports', { params: { task_id: task.id } }),
+      ]);
+      if (notesRes.status === 'fulfilled' && notesRes.value.data?.success) {
+        setTaskRelatedNotes(notesRes.value.data.data || []);
+      } else {
+        setTaskRelatedNotes([]);
+      }
+      if (reportsRes.status === 'fulfilled' && reportsRes.value.data?.success) {
+        setTaskRelatedReports(reportsRes.value.data.data || []);
+      } else {
+        setTaskRelatedReports([]);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingTaskRelations(false);
+    }
   };
 
   const handleSaveTaskEdits = async () => {
@@ -179,6 +212,7 @@ export default function TasksPage() {
         dependencies: taskEditDependencies,
         is_recurring: taskEditIsRecurring,
         recurrence_pattern: taskEditIsRecurring ? taskEditRecurrencePattern : null,
+        requires_report: taskEditRequiresReport,
       });
 
       if (res.data?.success) {
@@ -1489,6 +1523,76 @@ export default function TasksPage() {
               value={taskEditDueDate}
               onChange={(e) => setTaskEditDueDate(e.target.value)}
             />
+
+            {/* Report Gatekeeping / Approval Requirements Toggle */}
+            <div className="pt-2 border-t border-slate-100">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={taskEditRequiresReport}
+                  onChange={(e) => setTaskEditRequiresReport(e.target.checked)}
+                  className="h-4 w-4 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800">Perlu Laporan & Persetujuan (Gatekeeping)</span>
+                  <p className="text-[11px] text-slate-500">Tugas tidak dapat diselesaikan sebelum laporan penyelesaian disetujui reviewer.</p>
+                </div>
+              </label>
+            </div>
+
+            {/* Related Notes & Reports Section */}
+            <div className="pt-2 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Catatan Terkait ({taskRelatedNotes.length})
+                </label>
+                <Link
+                  href={`/notes?task_id=${selectedTask.id}`}
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-0.5"
+                >
+                  Buka Catatan <ExternalLink className="h-2.5 w-2.5" />
+                </Link>
+              </div>
+              {taskRelatedNotes.length > 0 ? (
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {taskRelatedNotes.map((n) => (
+                    <div key={n.id} className="p-2 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-800 truncate">{n.title}</span>
+                      <span className="text-[10px] text-slate-400 capitalize">{n.status}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Belum ada catatan tertaut ke tugas ini.</p>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Laporan Kerja & Approval ({taskRelatedReports.length})
+                </label>
+                <Link
+                  href={`/reports?task_id=${selectedTask.id}`}
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-0.5"
+                >
+                  Buka Laporan <ExternalLink className="h-2.5 w-2.5" />
+                </Link>
+              </div>
+              {taskRelatedReports.length > 0 ? (
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {taskRelatedReports.map((r) => (
+                    <div key={r.id} className="p-2 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-between text-xs">
+                      <div>
+                        <p className="font-semibold text-slate-800 truncate">{r.title}</p>
+                        <p className="text-[10px] text-slate-400">Versi {r.version || 1}</p>
+                      </div>
+                      <Badge variant={r.status}>{r.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Belum ada laporan penyelesaian yang dikirimkan.</p>
+              )}
+            </div>
 
             {/* Subtasks Section */}
             <div className="pt-2 border-t border-slate-100">
