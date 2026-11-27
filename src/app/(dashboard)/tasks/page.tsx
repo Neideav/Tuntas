@@ -135,6 +135,8 @@ export default function TasksPage() {
   const [formDependencies, setFormDependencies] = useState<number[]>([]);
   const [formIsRecurring, setFormIsRecurring] = useState(false);
   const [formRecurrencePattern, setFormRecurrencePattern] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [formRequiresReport, setFormRequiresReport] = useState(false);
+  const [formRequiresReview, setFormRequiresReview] = useState(false);
   const [formTags, setFormTags] = useState('');
   const [formSubtasks, setFormSubtasks] = useState<string[]>(['']);
   const [saving, setSaving] = useState(false);
@@ -150,10 +152,10 @@ export default function TasksPage() {
   const [taskEditDependencies, setTaskEditDependencies] = useState<number[]>([]);
   const [taskEditIsRecurring, setTaskEditIsRecurring] = useState(false);
   const [taskEditRecurrencePattern, setTaskEditRecurrencePattern] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [taskEditRequiresReport, setTaskEditRequiresReport] = useState(false);
+  const [taskEditRequiresReview, setTaskEditRequiresReview] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [savingEditTask, setSavingEditTask] = useState(false);
-
-  const [taskEditRequiresReport, setTaskEditRequiresReport] = useState(false);
   const [taskRelatedNotes, setTaskRelatedNotes] = useState<any[]>([]);
   const [taskRelatedReports, setTaskRelatedReports] = useState<any[]>([]);
   const [loadingTaskRelations, setLoadingTaskRelations] = useState(false);
@@ -171,6 +173,7 @@ export default function TasksPage() {
     setTaskEditIsRecurring(!!task.is_recurring);
     setTaskEditRecurrencePattern(task.recurrence_pattern || 'daily');
     setTaskEditRequiresReport(!!task.requires_report);
+    setTaskEditRequiresReview(!!task.requires_review);
     setNewSubtaskTitle('');
 
     // Fetch related notes & reports
@@ -213,14 +216,16 @@ export default function TasksPage() {
         is_recurring: taskEditIsRecurring,
         recurrence_pattern: taskEditIsRecurring ? taskEditRecurrencePattern : null,
         requires_report: taskEditRequiresReport,
+        requires_review: taskEditRequiresReview,
       });
 
       if (res.data?.success) {
         fetchTasks();
         setSelectedTask(null);
+        showToast('Tugas berhasil diperbarui', 'success');
       }
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Gagal menyimpan perubahan tugas.', 'error');
+      showToast(extractApiErrorMessage(err, 'Gagal menyimpan perubahan tugas.'), 'error');
     } finally {
       setSavingEditTask(false);
     }
@@ -323,6 +328,8 @@ export default function TasksPage() {
         dependencies: formDependencies,
         is_recurring: formIsRecurring,
         recurrence_pattern: formIsRecurring ? formRecurrencePattern : null,
+        requires_report: formRequiresReport,
+        requires_review: formRequiresReview,
         subtasks: filteredSubtasks,
         tags: parsedTags,
       });
@@ -338,6 +345,8 @@ export default function TasksPage() {
         setFormGoalId('');
         setFormDependencies([]);
         setFormIsRecurring(false);
+        setFormRequiresReport(false);
+        setFormRequiresReview(false);
         setFormTags('');
         setFormSubtasks(['']);
         fetchTasks();
@@ -394,7 +403,7 @@ export default function TasksPage() {
         );
       }
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Gagal memindahkan tugas.', 'error');
+      showToast(extractApiErrorMessage(err, 'Gagal memindahkan tugas.'), 'error');
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: previousStatus } : t))
       );
@@ -420,7 +429,7 @@ export default function TasksPage() {
         );
       }
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Gagal mengubah status tugas.', 'error');
+      showToast(extractApiErrorMessage(err, 'Gagal mengubah status tugas.'), 'error');
       setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
       );
@@ -456,20 +465,30 @@ export default function TasksPage() {
       });
 
       if (res.data?.success) {
+        const succeeded: number[] = res.data?.succeeded_ids || selectedTaskIds;
         if (action === 'delete') {
-          setTasks((prev) => prev.filter((t) => !selectedTaskIds.includes(t.id)));
+          setTasks((prev) => prev.filter((t) => !succeeded.includes(t.id)));
         } else if (action === 'status' && statusVal) {
           setTasks((prev) =>
             prev.map((t) =>
-              selectedTaskIds.includes(t.id) ? { ...t, status: statusVal as any } : t
+              succeeded.includes(t.id) ? { ...t, status: statusVal as any } : t
             )
           );
+        }
+        if (res.data?.failures && res.data.failures.length > 0) {
+          const firstFail = res.data.failures[0];
+          showToast(
+            `${res.data.affected_count || 0} berhasil, ${res.data.failures.length} gagal: ${firstFail.reason}`,
+            'warning'
+          );
+        } else {
+          showToast(res.data?.message || 'Aksi massal berhasil diproses.', 'success');
         }
         setSelectedTaskIds([]);
         fetchTasks();
       }
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Gagal memproses aksi massal.', 'error');
+      showToast(extractApiErrorMessage(err, 'Gagal memproses aksi massal.'), 'error');
     } finally {
       setIsBulkLoading(false);
     }
@@ -1350,6 +1369,31 @@ export default function TasksPage() {
             )}
           </div>
 
+          {/* Completion Requirement Gatekeeping */}
+          <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+            <span className="text-xs font-bold text-slate-800 block">Kriteria Penyelesaian</span>
+            <div className="space-y-2 pt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formRequiresReport}
+                  onChange={(e) => setFormRequiresReport(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                />
+                <span className="text-xs text-slate-700">Wajib Laporan Kerja Disetujui (Approved Report)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formRequiresReview}
+                  onChange={(e) => setFormRequiresReview(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                />
+                <span className="text-xs text-slate-700">Wajib Proses Review (Requires Review)</span>
+              </label>
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
               Tags (comma-separated)
@@ -1525,7 +1569,7 @@ export default function TasksPage() {
             />
 
             {/* Report Gatekeeping / Approval Requirements Toggle */}
-            <div className="pt-2 border-t border-slate-100">
+            <div className="pt-2 border-t border-slate-100 space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1536,6 +1580,18 @@ export default function TasksPage() {
                 <div>
                   <span className="text-xs font-bold text-slate-800">Perlu Laporan & Persetujuan (Gatekeeping)</span>
                   <p className="text-[11px] text-slate-500">Tugas tidak dapat diselesaikan sebelum laporan penyelesaian disetujui reviewer.</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={taskEditRequiresReview}
+                  onChange={(e) => setTaskEditRequiresReview(e.target.checked)}
+                  className="h-4 w-4 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800">Perlu Proses Review (Requires Review)</span>
+                  <p className="text-[11px] text-slate-500">Tugas tidak dapat diselesaikan sebelum proses review disetujui.</p>
                 </div>
               </label>
             </div>

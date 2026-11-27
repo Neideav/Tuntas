@@ -36,7 +36,19 @@ class StoreTaskRequest extends FormRequest
                     });
                 }),
             ],
-            'assigned_to' => 'nullable|exists:users,id',
+            'assigned_to' => [
+                'nullable',
+                'exists:users,id',
+                function ($attribute, $value, $fail) {
+                    $projectId = $this->input('project_id');
+                    if ($projectId && $value) {
+                        $check = app(\App\Services\TaskCompletionService::class)->validateAssignee((int) $value, (int) $projectId);
+                        if (!$check['valid']) {
+                            $fail($check['message']);
+                        }
+                    }
+                },
+            ],
             'category_id' => [
                 'nullable',
                 Rule::exists('categories', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
@@ -58,10 +70,22 @@ class StoreTaskRequest extends FormRequest
             'tags' => 'nullable|array',
             'tags.*' => 'string|max:50',
             'dependencies' => 'nullable|array',
-            'dependencies.*' => [
-                'integer',
-                Rule::exists('tasks', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
-            ],
+            'dependencies.*' => 'integer|exists:tasks,id',
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $projectId = $this->input('project_id') ? (int) $this->input('project_id') : null;
+            $deps = $this->input('dependencies', []);
+            if (!empty($deps)) {
+                $check = app(\App\Services\TaskCompletionService::class)
+                    ->validateDependencies(null, $deps, $projectId, $this->user()->id);
+                if (!$check['valid']) {
+                    $validator->errors()->add('dependencies', $check['message']);
+                }
+            }
+        });
     }
 }

@@ -122,31 +122,29 @@ class Task extends Model
     }
 
     /**
+     * Check if this task has passed the required review process.
+     */
+    public function hasPassedReview(): bool
+    {
+        return app(\App\Services\TaskCompletionService::class)->hasPassedReview($this);
+    }
+
+    /**
+     * Evaluate completion conditions JSON (subtasks, checklist, custom criteria).
+     */
+    public function evaluateCompletionConditions(): array
+    {
+        return app(\App\Services\TaskCompletionService::class)->evaluateCompletionConditions($this);
+    }
+
+    /**
      * Validate whether this task meets all completion conditions.
+     * Centralized through TaskCompletionService.
      *
      * @return array{allowed: bool, reason: string|null}
      */
     public function canBeCompleted(): array
     {
-        // 1. Prerequisite dependencies condition
-        if ($this->hasUncompletedDependencies()) {
-            return [
-                'allowed' => false,
-                'reason' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
-            ];
-        }
-
-        // 2. Report requirement condition
-        if ($this->requires_report && !$this->hasApprovedReport()) {
-            return [
-                'allowed' => false,
-                'reason' => 'Tugas ini memerlukan laporan yang telah disetujui (approved report) sebelum dapat diselesaikan.',
-            ];
-        }
-
-        return [
-            'allowed' => true,
-            'reason' => null,
-        ];
+        return app(\App\Services\TaskCompletionService::class)->canBeCompleted($this);
     }
 }

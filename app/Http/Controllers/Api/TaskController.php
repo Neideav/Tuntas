@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Http\Requests\Task\StoreTaskRequest;
 use App\Services\NotificationService;
 use App\Services\PermissionService;
+use App\Services\TaskCompletionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,8 @@ class TaskController extends Controller
 {
     public function __construct(
         protected PermissionService  $permissionService,
-        protected NotificationService $notificationService
+        protected NotificationService $notificationService,
+        protected TaskCompletionService $taskCompletionService
     ) {}
 
     /**
@@ -157,54 +159,33 @@ class TaskController extends Controller
                 if (!$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
                     abort(403, 'Unauthorized to assign tasks in this project.');
                 }
-                $isAssigneeInProject = ProjectMember::where('project_id', $project->id)
-                    ->where('user_id', $validated['assigned_to'])
-                    ->exists() || $project->user_id === (int) $validated['assigned_to'];
-                if (!$isAssigneeInProject) {
+                $assigneeCheck = $this->taskCompletionService->validateAssignee((int) $validated['assigned_to'], (int) $project->id);
+                if (!$assigneeCheck['valid']) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Pengguna yang ditugaskan bukan merupakan anggota proyek ini.',
+                        'message' => $assigneeCheck['message'],
                     ], 422);
                 }
-            }
-        }
-
-        // Validate task dependencies belong to same project or personal context
-        if (!empty($validated['dependencies'])) {
-            $projectId = $validated['project_id'] ?? null;
-            $invalidDeps = Task::whereIn('id', $validated['dependencies'])
-                ->where(function ($dq) use ($projectId, $request) {
-                    if ($projectId) {
-                        $dq->where('project_id', '!=', $projectId)->orWhereNull('project_id');
-                    } else {
-                        $dq->where('user_id', '!=', $request->user()->id)->orWhereNotNull('project_id');
-                    }
-                })->exists();
-
-            if ($invalidDeps) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Dependensi prasyarat harus berada dalam konteks proyek atau tugas personal yang sama.',
-                ], 422);
             }
         }
 
         // Validate completion conditions upon task creation
         if (($validated['status'] ?? 'todo') === 'completed') {
-            if (!empty($validated['requires_report'])) {
+            if (!empty($validated['project_id'])) {
+                $project = Project::find($validated['project_id']);
+                if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.complete')) {
+                    abort(403, 'Unauthorized to complete tasks in this project.');
+                }
+            }
+
+            $tempTask = new Task($validated);
+            $tempTask->user_id = $request->user()->id;
+            $canComplete = $this->taskCompletionService->canBeCompleted($tempTask);
+            if (!$canComplete['allowed']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Tugas ini memerlukan laporan yang telah disetujui (approved report) sebelum dapat diselesaikan.',
+                    'message' => $canComplete['reason'],
                 ], 422);
-            }
-            if (!empty($validated['dependencies'])) {
-                $hasIncomplete = Task::whereIn('id', $validated['dependencies'])->where('status', '!=', 'completed')->exists();
-                if ($hasIncomplete) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Tugas tidak dapat diselesaikan karena ada dependensi prasyarat yang belum selesai.',
-                    ], 422);
-                }
             }
         }
 
@@ -373,27 +354,58 @@ class TaskController extends Controller
             'tags' => 'nullable|array',
             'tags.*' => 'string|max:50',
             'dependencies' => 'nullable|array',
-            'dependencies.*' => [
-                'integer',
-                Rule::exists('tasks', 'id')->where(fn ($query) => $query->where('user_id', $userId)),
-            ],
+            'dependencies.*' => 'integer|exists:tasks,id',
         ]);
 
-        if (array_key_exists('assigned_to', $validated) && $task->project_id) {
-            $project = $task->project ?? Project::find($task->project_id);
-            if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
-                abort(403, 'Unauthorized to assign tasks in this project.');
+        $targetProjectId = array_key_exists('project_id', $validated) ? $validated['project_id'] : $task->project_id;
+        $targetAssigneeId = array_key_exists('assigned_to', $validated) ? $validated['assigned_to'] : $task->assigned_to;
+
+        // If project is changing
+        if (array_key_exists('project_id', $validated) && $validated['project_id'] !== $task->project_id) {
+            if ($validated['project_id'] !== null) {
+                $targetProject = Project::find($validated['project_id']);
+                if (!$targetProject || !$this->permissionService->userHasProjectPermission($request->user(), $targetProject, 'tasks.create')) {
+                    abort(403, 'Unauthorized to move task to this project.');
+                }
             }
-            if (!empty($validated['assigned_to']) && $project) {
-                $isAssigneeInProject = ProjectMember::where('project_id', $project->id)
-                    ->where('user_id', $validated['assigned_to'])
-                    ->exists() || $project->user_id === (int) $validated['assigned_to'];
-                if (!$isAssigneeInProject) {
+        }
+
+        // Check tasks.assign permission if assignee is being modified or assigned in a project
+        if (array_key_exists('assigned_to', $validated) && (int) $validated['assigned_to'] !== (int) $task->assigned_to) {
+            if ($targetProjectId) {
+                $project = Project::find($targetProjectId);
+                if ($project && !$this->permissionService->userHasProjectPermission($request->user(), $project, 'tasks.assign')) {
+                    abort(403, 'Unauthorized to assign tasks in this project.');
+                }
+            }
+        }
+
+        // Re-validate assignee against project context if either assignee or project is modified
+        if (array_key_exists('assigned_to', $validated) || array_key_exists('project_id', $validated)) {
+            if ($targetAssigneeId && $targetProjectId) {
+                $assigneeCheck = $this->taskCompletionService->validateAssignee($targetAssigneeId, $targetProjectId);
+                if (!$assigneeCheck['valid']) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Pengguna yang ditugaskan bukan merupakan anggota proyek ini.',
+                        'message' => $assigneeCheck['message'],
                     ], 422);
                 }
+            }
+        }
+
+        // Validate dependencies (self-reference, cross-project, cycles)
+        if (array_key_exists('dependencies', $validated)) {
+            $depCheck = $this->taskCompletionService->validateDependencies(
+                $task->id,
+                $validated['dependencies'] ?? [],
+                $targetProjectId,
+                $task->user_id
+            );
+            if (!$depCheck['valid']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $depCheck['message'],
+                ], 422);
             }
         }
 
@@ -402,10 +414,16 @@ class TaskController extends Controller
             if (!$this->permissionService->userHasTaskPermission($request->user(), $task, 'tasks.complete')) {
                 abort(403, 'Unauthorized to mark this task as completed.');
             }
-            if (isset($validated['requires_report'])) {
+            if (array_key_exists('requires_report', $validated)) {
                 $task->requires_report = (bool) $validated['requires_report'];
             }
-            $canComplete = $task->canBeCompleted();
+            if (array_key_exists('requires_review', $validated)) {
+                $task->requires_review = (bool) $validated['requires_review'];
+            }
+            if (array_key_exists('completion_conditions', $validated)) {
+                $task->completion_conditions = $validated['completion_conditions'];
+            }
+            $canComplete = $this->taskCompletionService->canBeCompleted($task);
             if (!$canComplete['allowed']) {
                 return response()->json([
                     'success' => false,
@@ -421,7 +439,9 @@ class TaskController extends Controller
             if (isset($validated['status'])) {
                 if ($validated['status'] === 'completed' && $task->status !== 'completed') {
                     $validated['completed_at'] = Carbon::now();
-                    $this->spawnNextRecurrence($task);
+                    if ($task->is_recurring) {
+                        $this->taskCompletionService->spawnNextRecurrence($task);
+                    }
                 } elseif ($validated['status'] !== 'completed') {
                     $validated['completed_at'] = null;
                 }
@@ -448,7 +468,7 @@ class TaskController extends Controller
 
             // Update project progress
             if ($task->project_id) {
-                $task->project?->updateProgress();
+                Project::find($task->project_id)?->updateProgress();
             }
             if ($oldProjectId && $oldProjectId !== $task->project_id) {
                 Project::find($oldProjectId)?->updateProgress();
@@ -456,7 +476,7 @@ class TaskController extends Controller
 
             // Update goal progress
             if ($task->goal_id) {
-                $task->goal?->recalculateProgress();
+                Goal::find($task->goal_id)?->recalculateProgress();
             }
             if ($oldGoalId && $oldGoalId !== $task->goal_id) {
                 Goal::find($oldGoalId)?->recalculateProgress();
@@ -504,7 +524,7 @@ class TaskController extends Controller
 
         // Enforce completion rules when completing
         if ($newStatus === 'completed') {
-            $canComplete = $task->canBeCompleted();
+            $canComplete = $this->taskCompletionService->canBeCompleted($task);
             if (!$canComplete['allowed']) {
                 return response()->json([
                     'success' => false,
@@ -522,7 +542,7 @@ class TaskController extends Controller
             ]);
 
             if ($newStatus === 'completed' && $task->is_recurring) {
-                $this->spawnNextRecurrence($task);
+                $this->taskCompletionService->spawnNextRecurrence($task);
             }
 
             if ($task->project_id) {
@@ -554,7 +574,7 @@ class TaskController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Task status updated',
-            'data' => $task->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
+            'data' => $task->fresh()->load(['category', 'project', 'goal', 'subtasks', 'tags', 'dependencies', 'dependents']),
         ]);
     }
 
@@ -591,27 +611,13 @@ class TaskController extends Controller
         ]);
 
         $taskIds = array_values(array_unique($validated['task_ids']));
-        $tasks = Task::whereIn('id', $taskIds)->get();
+        $tasks = Task::whereIn('id', $taskIds)->get()->keyBy('id');
 
-        if ($tasks->count() !== count($taskIds)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Satu atau lebih tugas tidak ditemukan.',
-            ], 404);
-        }
-
-        // Authorize each task strictly according to RBAC and context
         $requiredPerm = match ($validated['action']) {
             'delete' => 'tasks.delete',
-            'status' => 'tasks.complete',
+            'status' => ($validated['status'] ?? 'completed') === 'completed' ? 'tasks.complete' : 'tasks.update',
             default => 'tasks.update',
         };
-
-        foreach ($tasks as $t) {
-            if (!$this->permissionService->userHasTaskPermission($request->user(), $t, $requiredPerm)) {
-                abort(403, "Anda tidak memiliki izin '{$requiredPerm}' pada tugas #{$t->id}.");
-            }
-        }
 
         // Target project authorization for assign_project
         if ($validated['action'] === 'assign_project' && !empty($validated['project_id'])) {
@@ -621,84 +627,162 @@ class TaskController extends Controller
             }
         }
 
-        $affectedCount = 0;
+        $succeededIds = [];
+        $failures = [];
+        $validTasks = [];
 
-        DB::transaction(function () use ($userId, $validated, $tasks, $taskIds, &$affectedCount) {
-            if ($validated['action'] === 'delete') {
-                $projectIds = $tasks->pluck('project_id')->filter()->unique();
-                $goalIds = $tasks->pluck('goal_id')->filter()->unique();
-
-                $affectedCount = Task::whereIn('id', $taskIds)->delete();
-
-                foreach ($projectIds as $pId) {
-                    Project::find($pId)?->updateProgress();
-                }
-                foreach ($goalIds as $gId) {
-                    Goal::find($gId)?->recalculateProgress();
-                }
-            } elseif ($validated['action'] === 'status') {
-                $newStatus = $validated['status'] ?? 'completed';
-                $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
-
-                foreach ($tasks as $task) {
-                    if ($newStatus === 'completed') {
-                        $canComplete = $task->canBeCompleted();
-                        if (!$canComplete['allowed']) {
-                            continue; // Skip tasks that have blocking dependencies or require approved report
-                        }
-                    }
-                    $task->update([
-                        'status' => $newStatus,
-                        'completed_at' => $completedAt,
-                    ]);
-                    $affectedCount++;
-                }
-
-                $projectIds = $tasks->pluck('project_id')->filter()->unique();
-                $goalIds = $tasks->pluck('goal_id')->filter()->unique();
-
-                foreach ($projectIds as $pId) {
-                    Project::find($pId)?->updateProgress();
-                }
-                foreach ($goalIds as $gId) {
-                    Goal::find($gId)?->recalculateProgress();
-                }
-            } elseif ($validated['action'] === 'assign_project') {
-                $newProjectId = $validated['project_id'] ?? null;
-                $oldProjectIds = $tasks->pluck('project_id')->filter()->unique();
-
-                $affectedCount = Task::whereIn('id', $taskIds)->update(['project_id' => $newProjectId]);
-
-                if ($newProjectId) {
-                    Project::find($newProjectId)?->updateProgress();
-                }
-                foreach ($oldProjectIds as $pId) {
-                    Project::find($pId)?->updateProgress();
-                }
-            } elseif ($validated['action'] === 'assign_category') {
-                $newCatId = $validated['category_id'] ?? null;
-                $affectedCount = Task::whereIn('id', $taskIds)->update(['category_id' => $newCatId]);
+        foreach ($taskIds as $tid) {
+            $task = $tasks->get($tid);
+            if (!$task) {
+                $failures[] = [
+                    'id' => $tid,
+                    'title' => null,
+                    'reason' => 'Tugas tidak ditemukan.',
+                ];
+                continue;
             }
 
-            // Write audit log
-            AuditLog::create([
-                'user_id' => $userId,
-                'action' => 'tasks.bulk_' . $validated['action'],
-                'auditable_type' => Task::class,
-                'auditable_id' => 'bulk',
-                'payload' => [
-                    'action' => $validated['action'],
-                    'count' => $affectedCount,
-                    'task_ids' => $taskIds,
-                ],
-                'created_at' => now(),
-            ]);
-        });
+            // Individual authorization
+            if (!$this->permissionService->userHasTaskPermission($request->user(), $task, $requiredPerm)) {
+                $failures[] = [
+                    'id' => $task->id,
+                    'title' => $task->title,
+                    'reason' => "Tidak memiliki izin '{$requiredPerm}' pada tugas ini.",
+                ];
+                continue;
+            }
+
+            // Status action validation (completion rules)
+            if ($validated['action'] === 'status') {
+                $newStatus = $validated['status'] ?? 'completed';
+                if ($newStatus === 'completed') {
+                    $canComplete = $this->taskCompletionService->canBeCompleted($task);
+                    if (!$canComplete['allowed']) {
+                        $failures[] = [
+                            'id' => $task->id,
+                            'title' => $task->title,
+                            'reason' => $canComplete['reason'],
+                        ];
+                        continue;
+                    }
+                }
+            }
+
+            // Assign project validation (assignee compatibility)
+            if ($validated['action'] === 'assign_project' && !empty($validated['project_id'])) {
+                if ($task->assigned_to) {
+                    $assigneeCheck = $this->taskCompletionService->validateAssignee($task->assigned_to, (int) $validated['project_id']);
+                    if (!$assigneeCheck['valid']) {
+                        $failures[] = [
+                            'id' => $task->id,
+                            'title' => $task->title,
+                            'reason' => $assigneeCheck['message'],
+                        ];
+                        continue;
+                    }
+                }
+            }
+
+            $validTasks[] = $task;
+        }
+
+        $affectedCount = 0;
+
+        if (!empty($validTasks)) {
+            $validIds = array_map(fn ($t) => $t->id, $validTasks);
+
+            DB::transaction(function () use ($userId, $validated, $validTasks, $validIds, &$affectedCount, &$succeededIds) {
+                if ($validated['action'] === 'delete') {
+                    $projectIds = collect($validTasks)->pluck('project_id')->filter()->unique();
+                    $goalIds = collect($validTasks)->pluck('goal_id')->filter()->unique();
+
+                    foreach ($validTasks as $vt) {
+                        $vt->dependencies()->detach();
+                        $vt->dependents()->detach();
+                    }
+
+                    $affectedCount = Task::whereIn('id', $validIds)->delete();
+                    $succeededIds = $validIds;
+
+                    foreach ($projectIds as $pId) {
+                        Project::find($pId)?->updateProgress();
+                    }
+                    foreach ($goalIds as $gId) {
+                        Goal::find($gId)?->recalculateProgress();
+                    }
+                } elseif ($validated['action'] === 'status') {
+                    $newStatus = $validated['status'] ?? 'completed';
+                    $completedAt = $newStatus === 'completed' ? Carbon::now() : null;
+
+                    foreach ($validTasks as $task) {
+                        $task->update([
+                            'status' => $newStatus,
+                            'completed_at' => $completedAt,
+                        ]);
+                        if ($newStatus === 'completed' && $task->is_recurring) {
+                            $this->taskCompletionService->spawnNextRecurrence($task);
+                        }
+                        $succeededIds[] = $task->id;
+                        $affectedCount++;
+                    }
+
+                    $projectIds = collect($validTasks)->pluck('project_id')->filter()->unique();
+                    $goalIds = collect($validTasks)->pluck('goal_id')->filter()->unique();
+
+                    foreach ($projectIds as $pId) {
+                        Project::find($pId)?->updateProgress();
+                    }
+                    foreach ($goalIds as $gId) {
+                        Goal::find($gId)?->recalculateProgress();
+                    }
+                } elseif ($validated['action'] === 'assign_project') {
+                    $newProjectId = $validated['project_id'] ?? null;
+                    $oldProjectIds = collect($validTasks)->pluck('project_id')->filter()->unique();
+
+                    $affectedCount = Task::whereIn('id', $validIds)->update(['project_id' => $newProjectId]);
+                    $succeededIds = $validIds;
+
+                    if ($newProjectId) {
+                        Project::find($newProjectId)?->updateProgress();
+                    }
+                    foreach ($oldProjectIds as $pId) {
+                        Project::find($pId)?->updateProgress();
+                    }
+                } elseif ($validated['action'] === 'assign_category') {
+                    $newCatId = $validated['category_id'] ?? null;
+                    $affectedCount = Task::whereIn('id', $validIds)->update(['category_id' => $newCatId]);
+                    $succeededIds = $validIds;
+                }
+
+                // Write audit log
+                AuditLog::create([
+                    'user_id' => $userId,
+                    'actor_id' => $userId,
+                    'action' => 'tasks.bulk_' . $validated['action'],
+                    'auditable_type' => Task::class,
+                    'auditable_id' => 'bulk',
+                    'resource_type' => 'Task',
+                    'resource_id' => 'bulk',
+                    'context_type' => 'workspace',
+                    'payload' => [
+                        'action' => $validated['action'],
+                        'count' => $affectedCount,
+                        'task_ids' => $succeededIds,
+                    ],
+                    'created_at' => now(),
+                ]);
+            });
+        }
+
+        $failedCount = count($failures);
 
         return response()->json([
-            'success' => true,
-            'message' => "Operasi bulk '{$validated['action']}' berhasil diproses untuk {$affectedCount} tugas.",
+            'success' => $affectedCount > 0 || $failedCount === 0,
+            'message' => "Operasi bulk '{$validated['action']}' selesai: {$affectedCount} berhasil, {$failedCount} gagal.",
             'affected_count' => $affectedCount,
+            'failed_count' => $failedCount,
+            'succeeded_ids' => $succeededIds,
+            'failures' => $failures,
         ]);
     }
 
@@ -715,6 +799,9 @@ class TaskController extends Controller
             $projectId = $task->project_id;
             $goalId = $task->goal_id;
 
+            $task->dependencies()->detach();
+            $task->dependents()->detach();
+
             $task->delete();
 
             if ($projectId) {
@@ -729,52 +816,6 @@ class TaskController extends Controller
             'success' => true,
             'message' => 'Task deleted successfully',
         ]);
-    }
-
-    /**
-     * Automatically generate the next recurrence instance when a recurring task is completed.
-     */
-    private function spawnNextRecurrence(Task $task): ?Task
-    {
-        if (!$task->is_recurring) {
-            return null;
-        }
-
-        $pattern = $task->recurrence_pattern ?: 'daily';
-        $nextDueDate = $task->due_date ? Carbon::parse($task->due_date) : Carbon::today();
-
-        if ($pattern === 'daily') {
-            $nextDueDate->addDay();
-        } elseif ($pattern === 'weekly') {
-            $nextDueDate->addWeek();
-        } elseif ($pattern === 'monthly') {
-            $nextDueDate->addMonth();
-        }
-
-        $nextTask = Task::create([
-            'user_id' => $task->user_id,
-            'project_id' => $task->project_id,
-            'category_id' => $task->category_id,
-            'goal_id' => $task->goal_id,
-            'title' => $task->title,
-            'description' => $task->description,
-            'priority' => $task->priority,
-            'status' => 'todo',
-            'due_date' => $nextDueDate,
-            'is_recurring' => true,
-            'recurrence_pattern' => $pattern,
-        ]);
-
-        // Duplicate subtask templates in reset state
-        foreach ($task->subtasks as $sub) {
-            $nextTask->subtasks()->create([
-                'title' => $sub->title,
-                'is_completed' => false,
-                'order' => $sub->order,
-            ]);
-        }
-
-        return $nextTask;
     }
 
     private function authorizeOwner(Request $request, Task $task): void
