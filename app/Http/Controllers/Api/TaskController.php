@@ -9,7 +9,9 @@ use App\Models\Project;
 use App\Models\Subtask;
 use App\Models\Tag;
 use App\Models\Task;
+use App\Models\User;
 use App\Http\Requests\Task\StoreTaskRequest;
+use App\Services\NotificationService;
 use App\Services\PermissionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -19,7 +21,8 @@ use Illuminate\Validation\Rule;
 class TaskController extends Controller
 {
     public function __construct(
-        protected PermissionService $permissionService
+        protected PermissionService  $permissionService,
+        protected NotificationService $notificationService
     ) {}
 
     /**
@@ -221,6 +224,20 @@ class TaskController extends Controller
 
             return $task;
         });
+
+        // Notify assignee (outside transaction)
+        if (!empty($validated['assigned_to']) && $validated['assigned_to'] !== $request->user()->id) {
+            $assignee = \App\Models\User::find($validated['assigned_to']);
+            if ($assignee) {
+                try {
+                    app(\App\Services\NotificationService::class)->notifyTaskAssigned(
+                        $assignee, $request->user(), $task
+                    );
+                } catch (\Throwable $e) {
+                    // Non-critical — log but don't fail
+                }
+            }
+        }
 
         return response()->json([
             'success' => true,

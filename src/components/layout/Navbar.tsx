@@ -18,6 +18,7 @@ import api from '@/lib/api';
 import { useSidebar } from './sidebar-context';
 import { ActivityDrawer } from './ActivityDrawer';
 import { InviteModal } from './InviteModal';
+import { NotificationBell, NotificationDropdown, NotificationCenter, useNotifications } from '@/components/notifications/NotificationCenter';
 
 // Centralized Route Meta Configuration
 const ROUTE_META: Record<string, { title: string; parent: string }> = {
@@ -45,8 +46,13 @@ export function Navbar() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
+  const [isNotifCenterOpen, setIsNotifCenterOpen] = useState(false);
+
+  const { unreadCount, refresh: refreshNotifs } = useNotifications();
 
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const notifAnchorRef = useRef<HTMLDivElement>(null);
 
   // Load real authenticated user
   const loadUser = useCallback(async () => {
@@ -165,8 +171,24 @@ export function Navbar() {
             </div>
           </div>
 
-          {/* User Profile Pill / Interactive Dropdown */}
-          <div className="relative" ref={profileMenuRef}>
+          {/* Right Area: Notification Bell & User Profile */}
+          <div className="flex items-center gap-2">
+            {/* Notification Bell */}
+            <div className="relative" ref={notifAnchorRef}>
+              <NotificationBell
+                unreadCount={unreadCount}
+                onClick={() => setIsNotifDropdownOpen((prev) => !prev)}
+              />
+              <NotificationDropdown
+                isOpen={isNotifDropdownOpen}
+                onClose={() => setIsNotifDropdownOpen(false)}
+                onOpenCenter={() => setIsNotifCenterOpen(true)}
+                anchorRef={notifAnchorRef}
+              />
+            </div>
+
+            {/* User Profile Pill / Interactive Dropdown */}
+            <div className="relative" ref={profileMenuRef}>
             <button
               type="button"
               onClick={() => setIsProfileMenuOpen((prev) => !prev)}
@@ -237,6 +259,7 @@ export function Navbar() {
                 </motion.div>
               )}
             </AnimatePresence>
+            </div>
           </div>
         </div>
 
@@ -275,6 +298,15 @@ export function Navbar() {
           </div>
         </div>
       </header>
+
+      {/* Notification Center Modal */}
+      <NotificationCenter
+        isOpen={isNotifCenterOpen}
+        onClose={() => {
+          setIsNotifCenterOpen(false);
+          refreshNotifs();
+        }}
+      />
 
       {/* Activity Drawer Component */}
       <ActivityDrawer isOpen={isActivityOpen} onClose={() => setIsActivityOpen(false)} />

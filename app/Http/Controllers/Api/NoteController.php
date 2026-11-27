@@ -14,6 +14,8 @@ use App\Models\ProjectRole;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\ContentSanitizerService;
+use App\Services\MentionService;
+use App\Services\NotificationService;
 use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +27,9 @@ class NoteController extends Controller
 {
     public function __construct(
         protected PermissionService $permissionService,
-        protected ContentSanitizerService $sanitizerService
+        protected ContentSanitizerService $sanitizerService,
+        protected MentionService $mentionService,
+        protected NotificationService $notificationService
     ) {}
 
     /**
@@ -593,6 +597,9 @@ class NoteController extends Controller
         // Process mentions in comment
         $this->processMentions($comment, $sanitized, $user->id, $note->project_id);
 
+        // Notify note owner about new comment
+        $this->notificationService->notifyNoteCommented($user, $note, Str::limit(strip_tags($sanitized), 100));
+
         return response()->json([
             'success' => true,
             'message' => 'Komentar berhasil ditambahkan.',
@@ -699,42 +706,22 @@ class NoteController extends Controller
      */
     private function processMentions($mentionable, string $content, int $mentionerId, ?int $projectId): void
     {
-        $extracted = $this->sanitizerService->extractMentions($content);
+        $mentioner = User::find($mentionerId);
+        if (!$mentioner) return;
 
-        // Process user mentions
-        foreach ($extracted['users'] as $usernameOrEmail) {
-            $user = User::where('email', $usernameOrEmail)
-                ->orWhere('name', 'like', "%{$usernameOrEmail}%")
-                ->first();
+        $contextType = $mentionable instanceof NoteComment ? 'comment' : 'note';
+        $contextTitle = $mentionable instanceof NoteComment
+            ? ($mentionable->note?->title ?? 'Komentar Catatan')
+            : ($mentionable->title ?? 'Catatan');
 
-            if ($user && $user->id !== $mentionerId) {
-                Mention::firstOrCreate([
-                    'mentioner_id' => $mentionerId,
-                    'mentioned_user_id' => $user->id,
-                    'mentionable_type' => get_class($mentionable),
-                    'mentionable_id' => $mentionable->id,
-                    'project_id' => $projectId,
-                ]);
-            }
-        }
-
-        // Process role mentions
-        if ($projectId) {
-            foreach ($extracted['roles'] as $roleSlug) {
-                $role = ProjectRole::where('project_id', $projectId)
-                    ->where('slug', $roleSlug)
-                    ->first();
-
-                if ($role) {
-                    Mention::firstOrCreate([
-                        'mentioner_id' => $mentionerId,
-                        'mentioned_role_id' => $role->id,
-                        'mentionable_type' => get_class($mentionable),
-                        'mentionable_id' => $mentionable->id,
-                        'project_id' => $projectId,
-                    ]);
-                }
-            }
-        }
+        $this->mentionService->processMentions(
+            $mentioner,
+            $mentionable,
+            $content,
+            $contextType,
+            $mentionable->id,
+            $contextTitle,
+            $projectId
+        );
     }
 }

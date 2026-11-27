@@ -73,42 +73,59 @@ class ContentSanitizerService
     }
 
     /**
-     * Extract mentions and store them in the mentions table for any mentionable model.
+     * Extract mentions and store them in the mentions table for any mentionable model,
+     * delegating to MentionService for robust validation, isolation, and notifications.
      */
     public function extractAndStoreMentions($user, $mentionable, string $content, ?int $projectId = null): void
     {
-        $extracted = $this->extractMentions($content);
+        try {
+            $contextType = match (true) {
+                $mentionable instanceof \App\Models\WorkReport => 'report',
+                $mentionable instanceof \App\Models\Task => 'task',
+                $mentionable instanceof \App\Models\Note => 'note',
+                $mentionable instanceof \App\Models\NoteComment => 'comment',
+                default => 'workspace',
+            };
+            $title = $mentionable->title ?? $mentionable->name ?? 'Konten';
 
-        // Delete previous mentions for this model
-        $mentionable->mentions()->delete();
+            app(MentionService::class)->processMentions(
+                $user,
+                $mentionable,
+                $content,
+                $contextType,
+                $mentionable->id,
+                $title,
+                $projectId
+            );
+        } catch (\Throwable $e) {
+            // Fallback to basic mention storage if container/mentionService fails
+            $extracted = $this->extractMentions($content);
+            $mentionable->mentions()->delete();
 
-        // Mentioned Users
-        if (!empty($extracted['users'])) {
-            $users = \App\Models\User::whereIn('name', $extracted['users'])
-                ->orWhereIn('email', $extracted['users'])
-                ->get();
-
-            foreach ($users as $u) {
-                $mentionable->mentions()->create([
-                    'mentioner_id' => $user->id,
-                    'mentioned_user_id' => $u->id,
-                    'project_id' => $projectId,
-                ]);
+            if (!empty($extracted['users'])) {
+                $users = \App\Models\User::whereIn('name', $extracted['users'])
+                    ->orWhereIn('email', $extracted['users'])
+                    ->get();
+                foreach ($users as $u) {
+                    $mentionable->mentions()->create([
+                        'mentioner_id' => $user->id,
+                        'mentioned_user_id' => $u->id,
+                        'project_id' => $projectId,
+                    ]);
+                }
             }
-        }
 
-        // Mentioned Roles
-        if (!empty($extracted['roles']) && $projectId) {
-            $roles = \App\Models\ProjectRole::where('project_id', $projectId)
-                ->whereIn('slug', $extracted['roles'])
-                ->get();
-
-            foreach ($roles as $r) {
-                $mentionable->mentions()->create([
-                    'mentioner_id' => $user->id,
-                    'mentioned_role_id' => $r->id,
-                    'project_id' => $projectId,
-                ]);
+            if (!empty($extracted['roles']) && $projectId) {
+                $roles = \App\Models\ProjectRole::where('project_id', $projectId)
+                    ->whereIn('slug', $extracted['roles'])
+                    ->get();
+                foreach ($roles as $r) {
+                    $mentionable->mentions()->create([
+                        'mentioner_id' => $user->id,
+                        'mentioned_role_id' => $r->id,
+                        'project_id' => $projectId,
+                    ]);
+                }
             }
         }
     }

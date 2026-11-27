@@ -14,7 +14,9 @@ class Notification extends Model
         'title',
         'message',
         'type',
+        'idempotency_key',
         'action_url',
+        'meta',
         'is_read',
         'read_at',
         'is_archived',
@@ -22,10 +24,11 @@ class Notification extends Model
     ];
 
     protected $casts = [
-        'is_read' => 'boolean',
-        'read_at' => 'datetime',
+        'is_read'    => 'boolean',
+        'read_at'    => 'datetime',
         'is_archived' => 'boolean',
         'archived_at' => 'datetime',
+        'meta'       => 'array',
     ];
 
     public function user()
@@ -33,4 +36,5 @@ class Notification extends Model
         return $this->belongsTo(User::class);
     }
 }
+
 

@@ -295,5 +295,10 @@ Route::prefix('v1')->group(function () {
         Route::get('exam-grading', [ExamAssessmentController::class, 'gradingIndex']);
         Route::get('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingShow']);
         Route::post('exam-grading/{attempt}', [ExamAssessmentController::class, 'gradingStore']);
+
+        // Mention Engine
+        Route::get('mentions/autocomplete', [\App\Http\Controllers\Api\MentionController::class, 'autocomplete']);
+        Route::get('mentions/me', [\App\Http\Controllers\Api\MentionController::class, 'myMentions']);
+        Route::get('mentions', [\App\Http\Controllers\Api\MentionController::class, 'forModel']);
     }); // end middleware(['auth:sanctum', 'throttle:60,1'])
 });

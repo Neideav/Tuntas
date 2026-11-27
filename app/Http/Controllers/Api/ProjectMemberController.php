@@ -9,6 +9,7 @@ use App\Models\ProjectInvitation;
 use App\Models\ProjectMember;
 use App\Models\ProjectRole;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Services\PermissionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -19,7 +20,8 @@ use Illuminate\Validation\Rule;
 class ProjectMemberController extends Controller
 {
     public function __construct(
-        protected PermissionService $permissionService
+        protected PermissionService $permissionService,
+        protected NotificationService $notificationService
     ) {}
 
     /**
@@ -162,6 +164,12 @@ class ProjectMemberController extends Controller
                 'status' => 'pending',
                 'expires_at' => now()->addDays(7),
             ]);
+        }
+
+        // Notify invited user if an account exists with this email
+        $existingUser = User::where('email', $email)->first();
+        if ($existingUser) {
+            $this->notificationService->notifyProjectInvitation($existingUser, $user, $project, $invitation->token);
         }
 
         AuditLog::create([
@@ -320,6 +328,9 @@ class ProjectMemberController extends Controller
             return $member;
         });
 
+        // Notify admins about new member
+        $this->notificationService->notifyMemberJoined($user, $project);
+
         return response()->json([
             'success' => true,
             'message' => "Anda telah berhasil bergabung dengan proyek '{$project->title}'.",
@@ -385,10 +396,17 @@ class ProjectMemberController extends Controller
             ->where('user_id', $user->id)
             ->firstOrFail();
 
+        $oldRole = $member->role;
+
         $member->update([
             'role_id' => $roleId,
             'role' => $roleSlug,
         ]);
+
+        // Notify member of role change
+        if ($oldRole !== $roleSlug) {
+            $this->notificationService->notifyRoleChanged($user, $project, $oldRole, $roleSlug, $currentUser);
+        }
 
         AuditLog::create([
             'user_id' => $currentUser->id,
