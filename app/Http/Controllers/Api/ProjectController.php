@@ -224,8 +224,11 @@ class ProjectController extends Controller
             'deadline' => 'nullable|date|after_or_equal:start_date',
         ]);
 
-        DB::transaction(function () use ($project, $validated) {
+        DB::transaction(function () use ($project, $validated, $request) {
             $oldGoalId = $project->goal_id;
+            $oldValues = $project->only(array_keys($validated));
+            $isArchiving = isset($validated['is_archived']) && $validated['is_archived'] && !$project->is_archived;
+
             $project->update($validated);
 
             if ($project->goal_id) {
@@ -234,6 +237,23 @@ class ProjectController extends Controller
             if ($oldGoalId && $oldGoalId !== $project->goal_id) {
                 \App\Models\Goal::find($oldGoalId)?->recalculateProgress();
             }
+
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'actor_id' => $request->user()->id,
+                'project_id' => $project->id,
+                'action' => $isArchiving ? 'project.archived' : 'project.updated',
+                'auditable_type' => Project::class,
+                'auditable_id' => (string) $project->id,
+                'resource_type' => 'Project',
+                'resource_id' => (string) $project->id,
+                'context_type' => 'project',
+                'context_id' => $project->id,
+                'old_values' => $oldValues,
+                'new_values' => $validated,
+                'payload' => ['title' => $project->title, 'is_archived' => $project->is_archived],
+                'created_at' => now(),
+            ]);
         });
 
         return response()->json([

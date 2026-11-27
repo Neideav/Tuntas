@@ -317,6 +317,7 @@ class NoteController extends Controller
 
         $updateData = [];
         $contentChanged = false;
+        $oldStatus = $note->status;
 
         if (array_key_exists('title', $validated)) {
             $updateData['title'] = $validated['title'] ? trim($validated['title']) : 'Untitled Note';
@@ -374,14 +375,30 @@ class NoteController extends Controller
 
             $note->update($updateData);
 
+            $action = 'notes.updated';
+            if (isset($validated['status'])) {
+                if ($validated['status'] === Note::STATUS_PUBLISHED && $oldStatus !== Note::STATUS_PUBLISHED) {
+                    $action = 'notes.published';
+                } elseif ($validated['status'] === Note::STATUS_ARCHIVED) {
+                    $action = 'notes.archived';
+                }
+            }
+
             AuditLog::create([
                 'user_id' => $user->id,
+                'actor_id' => $user->id,
                 'project_id' => $note->project_id,
-                'action' => 'notes.updated',
+                'action' => $action,
                 'auditable_type' => Note::class,
                 'auditable_id' => (string) $note->id,
+                'resource_type' => 'Note',
+                'resource_id' => (string) $note->id,
+                'context_type' => $note->project_id ? 'project' : 'workspace',
+                'context_id' => $note->project_id,
                 'payload' => [
+                    'title' => $note->title,
                     'version' => $note->version,
+                    'status' => $note->status,
                 ],
                 'created_at' => now(),
             ]);
@@ -440,6 +457,21 @@ class NoteController extends Controller
 
         $note->update([
             'is_pinned' => !$note->is_pinned,
+        ]);
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'actor_id' => $user->id,
+            'project_id' => $note->project_id,
+            'action' => $note->is_pinned ? 'notes.pinned' : 'notes.unpinned',
+            'auditable_type' => Note::class,
+            'auditable_id' => (string) $note->id,
+            'resource_type' => 'Note',
+            'resource_id' => (string) $note->id,
+            'context_type' => $note->project_id ? 'project' : 'workspace',
+            'context_id' => $note->project_id,
+            'payload' => ['title' => $note->title, 'is_pinned' => $note->is_pinned],
+            'created_at' => now(),
         ]);
 
         return response()->json([

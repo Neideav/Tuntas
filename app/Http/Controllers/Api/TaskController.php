@@ -215,9 +215,15 @@ class TaskController extends Controller
             // Audit Log
             AuditLog::create([
                 'user_id' => $request->user()->id,
+                'actor_id' => $request->user()->id,
+                'project_id' => $task->project_id,
                 'action' => 'task.created',
                 'auditable_type' => Task::class,
                 'auditable_id' => (string) $task->id,
+                'resource_type' => 'Task',
+                'resource_id' => (string) $task->id,
+                'context_type' => $task->project_id ? 'project' : 'workspace',
+                'context_id' => $task->project_id,
                 'payload' => ['title' => $task->title, 'priority' => $task->priority],
                 'created_at' => now(),
             ]);
@@ -385,6 +391,27 @@ class TaskController extends Controller
             if ($oldGoalId && $oldGoalId !== $task->goal_id) {
                 Goal::find($oldGoalId)?->recalculateProgress();
             }
+
+            // Audit Log
+            $action = isset($validated['status']) && $validated['status'] === 'completed'
+                ? 'task.completed'
+                : (isset($validated['assigned_to']) ? 'task.assigned' : 'task.updated');
+
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'actor_id' => $request->user()->id,
+                'project_id' => $task->project_id,
+                'action' => $action,
+                'auditable_type' => Task::class,
+                'auditable_id' => (string) $task->id,
+                'resource_type' => 'Task',
+                'resource_id' => (string) $task->id,
+                'context_type' => $task->project_id ? 'project' : 'workspace',
+                'context_id' => $task->project_id,
+                'new_values' => $validated,
+                'payload' => ['title' => $task->title, 'status' => $task->status],
+                'created_at' => now(),
+            ]);
         });
 
         return response()->json([
@@ -431,6 +458,23 @@ class TaskController extends Controller
             if ($task->project_id) {
                 $task->project?->updateProgress();
             }
+
+            // Audit Log
+            AuditLog::create([
+                'user_id' => auth()->id() ?? $task->user_id,
+                'actor_id' => auth()->id() ?? $task->user_id,
+                'project_id' => $task->project_id,
+                'action' => $newStatus === 'completed' ? 'task.completed' : 'task.updated',
+                'auditable_type' => Task::class,
+                'auditable_id' => (string) $task->id,
+                'resource_type' => 'Task',
+                'resource_id' => (string) $task->id,
+                'context_type' => $task->project_id ? 'project' : 'workspace',
+                'context_id' => $task->project_id,
+                'new_values' => ['status' => $newStatus],
+                'payload' => ['title' => $task->title, 'status' => $newStatus],
+                'created_at' => now(),
+            ]);
 
             if ($task->goal_id) {
                 $task->goal?->recalculateProgress();
